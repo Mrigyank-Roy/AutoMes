@@ -55,7 +55,11 @@ function DashboardContent() {
   }
 
   function handleConnectInstagram() {
-    window.location.href = '/api/auth/instagram'
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user?.id) {
+        window.location.href = `/api/auth/instagram?uid=${session.user.id}`
+      }
+    })
   }
 
   if (loading) {
