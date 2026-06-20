@@ -9,21 +9,35 @@ const APP_URL = process.env.NEXT_PUBLIC_APP_URL!
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams
   const code = searchParams.get('code')
+  const state = searchParams.get('state')
   const error = searchParams.get('error')
 
   if (error) {
     return NextResponse.redirect(`${APP_URL}/dashboard?error=instagram_denied`)
   }
 
-  if (!code) {
+  if (!code || !state) {
     return NextResponse.redirect(`${APP_URL}/dashboard?error=no_code`)
+  }
+
+  // Decode user ID from state
+  let userId: string | null = null
+  try {
+    const stateData = JSON.parse(Buffer.from(state, 'base64').toString('utf8'))
+    userId = stateData.userId
+  } catch (e) {
+    console.error('Failed to parse state:', e)
+    return NextResponse.redirect(`${APP_URL}/login?error=invalid_state`)
+  }
+
+  if (!userId) {
+    return NextResponse.redirect(`${APP_URL}/login?error=no_user_in_state`)
   }
 
   try {
     const CALLBACK_URL = `${APP_URL}/api/auth/instagram/callback`
 
     // Step A — Exchange code for short-lived token
-    // Instagram Login uses api.instagram.com not graph.facebook.com
     const tokenRes = await fetch('https://api.instagram.com/oauth/access_token', {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -44,9 +58,8 @@ export async function GET(request: NextRequest) {
     }
 
     const shortLivedToken = tokenData.access_token
-    const igUserId = tokenData.user_id
 
-    // Step B — Exchange for long-lived token (valid 60 days)
+    // Step B — Exchange for long-lived token
     const longTokenRes = await fetch(
       `https://graph.instagram.com/access_token?` +
       `grant_type=ig_exchange_token&` +
@@ -58,7 +71,7 @@ export async function GET(request: NextRequest) {
 
     const longLivedToken = longTokenData.access_token
 
-    // Step C — Get Instagram account details
+    // Step C — Get Instagram profile
     const igProfileRes = await fetch(
       `https://graph.instagram.com/v21.0/me?` +
       `fields=id,username&` +
@@ -70,45 +83,13 @@ export async function GET(request: NextRequest) {
     const igAccountId = igProfile.id
     const igUsername = igProfile.username
 
-    // Step D — Encrypt the token
+    // Step D — Encrypt token
     const encryptedToken = encrypt(longLivedToken)
 
-    // Token expires in 60 days
     const expiresAt = new Date()
     expiresAt.setDate(expiresAt.getDate() + 60)
 
-    // Step E — Get user from cookies and save to Supabase
-    const cookieHeader = request.headers.get('cookie') ?? ''
-    const cookies = Object.fromEntries(
-      cookieHeader.split(';').map(c => {
-        const [key, ...val] = c.trim().split('=')
-        return [key.trim(), val.join('=')]
-      })
-    )
-
-    const sessionKey = Object.keys(cookies).find(k => 
-      k.includes('auth-token') && !k.includes('code-verifier')
-    )
-
-    if (!sessionKey) {
-      console.error('No session cookie found. Keys:', Object.keys(cookies))
-      return NextResponse.redirect(`${APP_URL}/login?error=not_logged_in`)
-    }
-
-    let userId: string | null = null
-    try {
-      const sessionData = JSON.parse(decodeURIComponent(cookies[sessionKey]))
-      userId = sessionData?.user?.id
-    } catch (e) {
-      console.error('Failed to parse session cookie:', e)
-      return NextResponse.redirect(`${APP_URL}/login?error=session_parse_failed`)
-    }
-
-    if (!userId) {
-      return NextResponse.redirect(`${APP_URL}/login?error=not_logged_in`)
-    }
-
-    // Step F — Save to Supabase
+    // Step E — Save to Supabase using service client
     const serviceSupabase = createServiceSupabaseClient()
 
     const { error: dbError } = await serviceSupabase
