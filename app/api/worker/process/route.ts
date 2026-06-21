@@ -3,11 +3,10 @@ import { Worker } from 'bullmq'
 import { connection } from '@/lib/queue'
 import { createServiceSupabaseClient } from '@/lib/supabase-server'
 import { decrypt } from '@/lib/encryption'
+import { refreshInstagramToken } from '@/lib/refresh-token'
 
-// This endpoint is called by QStash every 30 seconds
 export async function POST(request: NextRequest) {
   
-  // Verify this is called by QStash or our own system
   const authHeader = request.headers.get('authorization')
   if (authHeader !== `Bearer ${process.env.WORKER_SECRET}`) {
     return new NextResponse('Unauthorized', { status: 401 })
@@ -23,16 +22,20 @@ export async function POST(request: NextRequest) {
         commenterUsername,
         commentId,
         igAccountId,
-        accessTokenEnc,
+        igDbAccountId,
+        tokenExpiresAt: tokenExpiresAtStr,
+        accessTokenEnc: initialTokenEnc,
         userId,
         dmMessage,
         replyEnabled,
         replyMessages,
       } = job.data
 
+      let accessTokenEnc = initialTokenEnc
+
       const supabase = createServiceSupabaseClient()
 
-      // Step 1 — Check for duplicate (already sent DM to this person for this automation)
+      // Step 1 — Check for duplicate
       const { data: existingLog } = await supabase
         .from('dm_logs')
         .select('id')
@@ -41,7 +44,7 @@ export async function POST(request: NextRequest) {
         .maybeSingle()
 
       if (existingLog) {
-        console.log(`Already sent DM to ${commenterUsername} for automation ${automationId} — skipping`)
+        console.log(`Already sent DM to ${commenterUsername} — skipping`)
         return
       }
 
@@ -59,8 +62,6 @@ export async function POST(request: NextRequest) {
 
       if (subscription.dms_used_this_month >= subscription.dm_limit_monthly) {
         console.log(`User ${userId} has hit their DM limit — skipping`)
-        
-        // Log as limit_reached so user can see it in dashboard
         await supabase.from('dm_logs').insert({
           automation_id: automationId,
           user_id: userId,
@@ -71,32 +72,34 @@ export async function POST(request: NextRequest) {
         return
       }
 
-      // Step 3 — Check if token needs refresh before using it
-      const tokenExpiresAt = new Date(/* we need this from DB */)
-      const daysUntilExpiry = Math.floor(
-        (tokenExpiresAt.getTime() - Date.now()) / (1000 * 60 * 60 * 24)
-      )
+      // Step 3 — Check if token needs refresh
+      if (tokenExpiresAtStr) {
+        const tokenExpiresAt = new Date(tokenExpiresAtStr)
+        const daysUntilExpiry = Math.floor(
+          (tokenExpiresAt.getTime() - Date.now()) / (1000 * 60 * 60 * 24)
+        )
 
-      if (daysUntilExpiry < 10) {
-        console.log(`Token expiring in ${daysUntilExpiry} days — refreshing now`)
-        await refreshInstagramToken(/* ig account id from DB */)
-        
-        // Re-fetch the updated token
-        const { data: updatedAccount } = await supabase
-          .from('instagram_accounts')
-          .select('access_token_enc, token_expires_at')
-          .eq('ig_account_id', igAccountId)
-          .single()
-          
-        if (updatedAccount) {
-          accessTokenEnc = updatedAccount.access_token_enc
+        if (daysUntilExpiry < 10) {
+          console.log(`Token expiring in ${daysUntilExpiry} days — refreshing now`)
+          await refreshInstagramToken(igDbAccountId)
+
+          // Re-fetch updated token
+          const { data: updatedAccount } = await supabase
+            .from('instagram_accounts')
+            .select('access_token_enc')
+            .eq('id', igDbAccountId)
+            .single()
+
+          if (updatedAccount) {
+            accessTokenEnc = updatedAccount.access_token_enc
+          }
         }
       }
 
-      // Decrypt access token
+      // Step 4 — Decrypt token
       const accessToken = decrypt(accessTokenEnc)
 
-      // Step 4 — Send the DM
+      // Step 5 — Send the DM
       const dmRes = await fetch(
         `https://graph.instagram.com/v21.0/${igAccountId}/messages`,
         {
@@ -117,7 +120,7 @@ export async function POST(request: NextRequest) {
 
       const success = !dmResult.error
 
-      // Step 5 — Log the result
+      // Step 6 — Log the result
       await supabase.from('dm_logs').insert({
         automation_id: automationId,
         user_id: userId,
@@ -132,17 +135,18 @@ export async function POST(request: NextRequest) {
         throw new Error(dmResult.error?.message)
       }
 
-      // Step 6 — Increment DM counter
+      // Step 7 — Increment DM counter
       await supabase
         .from('subscriptions')
-        .update({ dms_used_this_month: subscription.dms_used_this_month + 1 })
+        .update({ 
+          dms_used_this_month: subscription.dms_used_this_month + 1 
+        })
         .eq('user_id', userId)
 
       console.log(`✅ DM sent to @${commenterUsername}`)
 
-      // Step 7 — Public comment reply (paid plans only)
+      // Step 8 — Public comment reply (paid plans only)
       if (replyEnabled && subscription.allows_comment_reply) {
-        // Pick a random reply from the array
         const replyText = replyMessages[
           Math.floor(Math.random() * replyMessages.length)
         ]

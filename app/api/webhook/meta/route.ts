@@ -48,7 +48,7 @@ export async function POST(request: NextRequest) {
         // Step 1 — Find the instagram_account in our DB matching this IG account
         const { data: igAccount } = await supabase
           .from('instagram_accounts')
-          .select('id, user_id, access_token_enc')
+          .select('id, user_id, access_token_enc, token_expires_at')
           .eq('ig_account_id', igAccountId)
           .single()
 
