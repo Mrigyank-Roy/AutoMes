@@ -22,13 +22,18 @@ export async function POST(request: NextRequest) {
         commenterId,
         commenterUsername,
         commentId,
+        commentText,
         igAccountId,
-        accessTokenEnc,
+        igDbAccountId,
+        tokenExpiresAt,
+        accessTokenEnc: initialTokenEnc,
         userId,
         dmMessage,
         replyEnabled,
         replyMessages,
       } = job.data
+
+      let accessTokenEnc = initialTokenEnc
 
       const supabase = createServiceSupabaseClient()
 
