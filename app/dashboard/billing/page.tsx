@@ -1,18 +1,26 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, Suspense } from 'react'
 import { supabase } from '@/lib/supabase'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Progress } from '@/components/ui/progress'
 import { Badge } from '@/components/ui/badge'
 
-export default function BillingPage() {
+function BillingContent() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const [subscription, setSubscription] = useState<any>(null)
   const [plans, setPlans] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
+  const [successMessage, setSuccessMessage] = useState('')
+
+  useEffect(() => {
+    if (searchParams.get('success') === 'true') {
+      setSuccessMessage('🎉 Payment successful! Your plan has been upgraded.')
+    }
+  }, [searchParams])
 
   useEffect(() => {
     async function loadData() {
@@ -58,6 +66,12 @@ export default function BillingPage() {
         <h1 className="text-2xl font-semibold">Billing</h1>
         <p className="text-sm text-gray-500 mt-1">Manage your plan and usage</p>
       </div>
+
+      {successMessage && (
+        <div className="bg-green-50 text-green-700 text-sm px-4 py-3 rounded-lg mb-5">
+          {successMessage}
+        </div>
+      )}
 
       {/* Current usage */}
       <Card className="mb-8">
@@ -144,7 +158,7 @@ export default function BillingPage() {
                   <Button
                     className="w-full"
                     variant={isPopular ? 'default' : 'outline'}
-                    onClick={() => alert('Stripe billing coming soon!')}
+                    onClick={() => router.push(`/dashboard/billing/upgrade?plan=${plan.id}`)}
                   >
                     {plan.price_inr === 0 ? 'Downgrade' : 'Upgrade'}
                   </Button>
@@ -160,5 +174,17 @@ export default function BillingPage() {
         Stripe billing integration coming soon.
       </p>
     </div>
+  )
+}
+
+export default function BillingPage() {
+  return (
+    <Suspense fallback={
+      <div className="flex items-center justify-center h-64">
+        <p className="text-sm text-gray-400">Loading...</p>
+      </div>
+    }>
+      <BillingContent />
+    </Suspense>
   )
 }
