@@ -71,7 +71,29 @@ export async function POST(request: NextRequest) {
         return
       }
 
-      // Step 3 — Decrypt access token
+      // Step 3 — Check if token needs refresh before using it
+      const tokenExpiresAt = new Date(/* we need this from DB */)
+      const daysUntilExpiry = Math.floor(
+        (tokenExpiresAt.getTime() - Date.now()) / (1000 * 60 * 60 * 24)
+      )
+
+      if (daysUntilExpiry < 10) {
+        console.log(`Token expiring in ${daysUntilExpiry} days — refreshing now`)
+        await refreshInstagramToken(/* ig account id from DB */)
+        
+        // Re-fetch the updated token
+        const { data: updatedAccount } = await supabase
+          .from('instagram_accounts')
+          .select('access_token_enc, token_expires_at')
+          .eq('ig_account_id', igAccountId)
+          .single()
+          
+        if (updatedAccount) {
+          accessTokenEnc = updatedAccount.access_token_enc
+        }
+      }
+
+      // Decrypt access token
       const accessToken = decrypt(accessTokenEnc)
 
       // Step 4 — Send the DM

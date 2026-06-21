@@ -98,6 +98,8 @@ export async function POST(request: NextRequest) {
             commentId,
             commentText,
             igAccountId,
+            igDbAccountId: igAccount.id,
+            tokenExpiresAt: igAccount.token_expires_at,
             accessTokenEnc: igAccount.access_token_enc,
             userId: igAccount.user_id,
             dmMessage: automation.dm_message,
