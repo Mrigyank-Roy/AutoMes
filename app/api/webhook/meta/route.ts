@@ -20,53 +20,50 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   const body = await request.json()
+  console.log('📨 Webhook received:', JSON.stringify(body, null, 2))
 
   try {
     const entries = body.entry ?? []
 
     for (const entry of entries) {
       const changes = entry.changes ?? []
+      const igAccountId = entry.id
 
       for (const change of changes) {
         if (change.field !== 'comments') continue
 
         const value = change.value
-        const igAccountId = entry.id        // Instagram account that owns the post
-        const postId = value?.media?.id     // The post that was commented on
-        const commentText = value?.text     // What they wrote
-        const commenterId = value?.from?.id // Who commented (their IG scoped ID)
+        const postId = value?.media?.id
+        const commentText = value?.text ?? ''
+        const commenterId = value?.from?.id
         const commenterUsername = value?.from?.username
-        const commentId = value?.id         // The comment ID (for public reply)
+        const commentId = value?.id
 
-        if (!postId || !commentText || !commenterId) continue
+        if (!postId || !commenterId) continue
 
-        console.log(`📨 Comment received on post ${postId}: "${commentText}" by @${commenterUsername}`)
+        console.log(`💬 Comment on post ${postId}: "${commentText}" by @${commenterUsername}`)
 
-        // Find matching active automations for this post
         const supabase = createServiceSupabaseClient()
 
-        const { data: automations, error } = await supabase
-          .from('automations')
-          .select(`
-            *,
-            instagram_accounts!inner(
-              id,
-              ig_account_id,
-              user_id,
-              access_token_enc
-            ),
-            subscriptions:users!inner(
-              subscriptions(*)
-            )
-          `)
-          .eq('instagram_accounts.ig_account_id', igAccountId)
-          .eq('post_id', postId)
-          .eq('is_active', true)
+        // Step 1 — Find the instagram_account in our DB matching this IG account
+        const { data: igAccount } = await supabase
+          .from('instagram_accounts')
+          .select('id, user_id, access_token_enc')
+          .eq('ig_account_id', igAccountId)
+          .single()
 
-        if (error) {
-          console.error('Error fetching automations:', error)
+        if (!igAccount) {
+          console.log(`No account found for ig_account_id: ${igAccountId}`)
           continue
         }
+
+        // Step 2 — Find active automations for this post
+        const { data: automations } = await supabase
+          .from('automations')
+          .select('*')
+          .eq('ig_account_id', igAccount.id)
+          .eq('post_id', postId)
+          .eq('is_active', true)
 
         if (!automations || automations.length === 0) {
           console.log(`No active automations for post ${postId}`)
@@ -74,7 +71,7 @@ export async function POST(request: NextRequest) {
         }
 
         for (const automation of automations) {
-          // Check trigger type
+          // Step 3 — Check if comment matches trigger
           let shouldSend = false
 
           if (automation.trigger_type === 'any') {
@@ -87,13 +84,13 @@ export async function POST(request: NextRequest) {
           }
 
           if (!shouldSend) {
-            console.log(`Comment "${commentText}" did not match keywords for automation ${automation.id}`)
+            console.log(`❌ No keyword match for "${commentText}"`)
             continue
           }
 
-          console.log(`✅ Match found! Queuing DM for @${commenterUsername}`)
+          console.log(`✅ Match! Queuing DM for @${commenterUsername}`)
 
-          // Add job to queue
+          // Step 4 — Add to queue
           await dmQueue.add('send-dm', {
             automationId: automation.id,
             commenterId,
@@ -101,12 +98,14 @@ export async function POST(request: NextRequest) {
             commentId,
             commentText,
             igAccountId,
-            accessTokenEnc: automation.instagram_accounts.access_token_enc,
-            userId: automation.instagram_accounts.user_id,
+            accessTokenEnc: igAccount.access_token_enc,
+            userId: igAccount.user_id,
             dmMessage: automation.dm_message,
             replyEnabled: automation.reply_enabled,
             replyMessages: automation.reply_messages,
           })
+
+          console.log(`📬 Job added to queue for @${commenterUsername}`)
         }
       }
     }
