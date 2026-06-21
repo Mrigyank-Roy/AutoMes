@@ -8,49 +8,10 @@ import { Button } from '@/components/ui/button'
 import { Progress } from '@/components/ui/progress'
 import { Badge } from '@/components/ui/badge'
 
-const plans = [
-  {
-    name: 'Trial',
-    price: '₹0',
-    period: '14 days',
-    dms: 50,
-    accounts: 1,
-    reply: false,
-    current: true,
-  },
-  {
-    name: 'Starter',
-    price: '₹799',
-    period: '/mo',
-    dms: 500,
-    accounts: 1,
-    reply: true,
-    current: false,
-  },
-  {
-    name: 'Pro',
-    price: '₹1,999',
-    period: '/mo',
-    dms: 2000,
-    accounts: 3,
-    reply: true,
-    current: false,
-    popular: true,
-  },
-  {
-    name: 'Agency',
-    price: '₹4,999',
-    period: '/mo',
-    dms: 10000,
-    accounts: 10,
-    reply: true,
-    current: false,
-  },
-]
-
 export default function BillingPage() {
   const router = useRouter()
   const [subscription, setSubscription] = useState<any>(null)
+  const [plans, setPlans] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -58,13 +19,22 @@ export default function BillingPage() {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) { router.push('/login'); return }
 
+      // Load subscription
       const { data: sub } = await supabase
         .from('subscriptions')
         .select('*')
         .eq('user_id', session.user.id)
         .single()
-
       setSubscription(sub)
+
+      // Load plans from DB — change prices/limits in Supabase, UI updates automatically
+      const { data: plansData } = await supabase
+        .from('plans')
+        .select('*')
+        .eq('is_active', true)
+        .order('sort_order', { ascending: true })
+      setPlans(plansData ?? [])
+
       setLoading(false)
     }
     loadData()
@@ -115,63 +85,74 @@ export default function BillingPage() {
         </CardContent>
       </Card>
 
-      {/* Plans */}
+      {/* Plans from DB */}
       <div className="grid grid-cols-2 gap-4 mb-6">
-        {plans.map(plan => (
-          <Card
-            key={plan.name}
-            className={`relative ${plan.popular ? 'border-black border-2 overflow-visible' : ''}`}
-          >
-            {plan.popular && (
-              <div className="absolute -top-3 left-1/2 -translate-x-1/2">
-                <Badge className="bg-black text-white text-xs">Most popular</Badge>
-              </div>
-            )}
-            <CardContent className="pt-5 pb-5">
-              <div className="mb-4">
-                <p className="font-medium">{plan.name}</p>
-                <div className="flex items-baseline gap-1 mt-1">
-                  <span className="text-2xl font-semibold">{plan.price}</span>
-                  <span className="text-sm text-gray-400">{plan.period}</span>
-                </div>
-              </div>
+        {plans.map(plan => {
+          const isCurrentPlan = subscription?.plan_name === plan.id
+          const isPopular = plan.id === 'pro'
 
-              <div className="flex flex-col gap-2 mb-5 text-sm text-gray-600">
-                <div className="flex items-center gap-2">
-                  <span className="text-green-500">✓</span>
-                  <span>{plan.dms.toLocaleString()} DMs/month</span>
+          return (
+            <Card
+              key={plan.id}
+              className={`relative ${isPopular ? 'border-black border-2 overflow-visible' : ''}`}
+            >
+              {isPopular && (
+                <div className="absolute -top-3 left-1/2 -translate-x-1/2">
+                  <Badge className="bg-black text-white text-xs">Most popular</Badge>
                 </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-green-500">✓</span>
-                  <span>{plan.accounts} Instagram account{plan.accounts > 1 ? 's' : ''}</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  {plan.reply
-                    ? <span className="text-green-500">✓</span>
-                    : <span className="text-gray-300">✗</span>
-                  }
-                  <span className={plan.reply ? '' : 'text-gray-400'}>
-                    Public comment reply
-                  </span>
-                </div>
-              </div>
-
-              {subscription?.plan_name === plan.name.toLowerCase() ? (
-                <Button variant="outline" className="w-full" disabled>
-                  Current plan
-                </Button>
-              ) : (
-                <Button
-                  className="w-full"
-                  variant={plan.popular ? 'default' : 'outline'}
-                  onClick={() => alert('Stripe billing coming soon!')}
-                >
-                  {plan.name === 'Trial' ? 'Downgrade' : 'Upgrade'}
-                </Button>
               )}
-            </CardContent>
-          </Card>
-        ))}
+              <CardContent className="pt-5 pb-5">
+                <div className="mb-4">
+                  <p className="font-medium">{plan.name}</p>
+                  <div className="flex items-baseline gap-1 mt-1">
+                    <span className="text-2xl font-semibold">
+                      {plan.price_inr === 0 ? '₹0' : `₹${plan.price_inr.toLocaleString()}`}
+                    </span>
+                    <span className="text-sm text-gray-400">
+                      {plan.id === 'trial' ? '14 days' : '/mo'}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="flex flex-col gap-2 mb-5 text-sm text-gray-600">
+                  <div className="flex items-center gap-2">
+                    <span className="text-green-500">✓</span>
+                    <span>{plan.dm_limit.toLocaleString()} DMs/month</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-green-500">✓</span>
+                    <span>
+                      {plan.account_limit} Instagram account{plan.account_limit > 1 ? 's' : ''}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {plan.allows_comment_reply
+                      ? <span className="text-green-500">✓</span>
+                      : <span className="text-gray-300">✗</span>
+                    }
+                    <span className={plan.allows_comment_reply ? '' : 'text-gray-400'}>
+                      Public comment reply
+                    </span>
+                  </div>
+                </div>
+
+                {isCurrentPlan ? (
+                  <Button variant="outline" className="w-full" disabled>
+                    Current plan
+                  </Button>
+                ) : (
+                  <Button
+                    className="w-full"
+                    variant={isPopular ? 'default' : 'outline'}
+                    onClick={() => alert('Stripe billing coming soon!')}
+                  >
+                    {plan.price_inr === 0 ? 'Downgrade' : 'Upgrade'}
+                  </Button>
+                )}
+              </CardContent>
+            </Card>
+          )
+        })}
       </div>
 
       <p className="text-xs text-center text-gray-400">
