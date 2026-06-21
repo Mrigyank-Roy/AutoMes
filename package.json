@@ -11,8 +11,12 @@
   "dependencies": {
     "@supabase/ssr": "^0.12.0",
     "@supabase/supabase-js": "^2.108.2",
+    "@upstash/qstash": "^2.11.1",
+    "@upstash/redis": "^1.38.0",
+    "bullmq": "^5.79.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "ioredis": "^5.11.1",
     "lucide-react": "^1.21.0",
     "next": "16.2.9",
     "radix-ui": "^1.6.0",
