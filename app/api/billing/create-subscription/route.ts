@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServiceSupabaseClient } from '@/lib/supabase-server'
-import { razorpay, getPlanId } from '@/lib/razorpay'
+import { razorpay, calculateDiscountedPrice } from '@/lib/razorpay'
 
 export async function POST(request: NextRequest) {
   try {
@@ -12,62 +12,60 @@ export async function POST(request: NextRequest) {
 
     const supabase = createServiceSupabaseClient()
 
-    // Get user email
-    const { data: user } = await supabase
-      .from('users')
-      .select('email')
-      .eq('id', userId)
+    // Get plan details
+    const { data: plan } = await supabase
+      .from('plans')
+      .select('*')
+      .eq('id', planId)
       .single()
 
-    if (!user) {
-      return NextResponse.json({ error: 'User not found' }, { status: 404 })
+    if (!plan) {
+      return NextResponse.json({ error: 'Plan not found' }, { status: 404 })
     }
 
-    // Get or create Razorpay customer
-    const { data: subscription } = await supabase
-      .from('subscriptions')
-      .select('razorpay_customer_id')
-      .eq('user_id', userId)
-      .single()
+    let finalPrice = plan.price_inr
 
-    let customerId = subscription?.razorpay_customer_id
+    // Apply coupon discount if provided
+    if (couponId) {
+      const { data: coupon } = await supabase
+        .from('coupons')
+        .select('*')
+        .eq('id', couponId)
+        .single()
 
-    if (!customerId) {
-      const customer = await razorpay.customers.create({
-        email: user.email,
-        fail_existing: 0
-      })
-      customerId = customer.id
-
-      // Save customer ID
-      await supabase
-        .from('subscriptions')
-        .update({ razorpay_customer_id: customerId })
-        .eq('user_id', userId)
+      if (coupon) {
+        finalPrice = calculateDiscountedPrice(
+          plan.price_inr,
+          coupon.discount_type,
+          coupon.discount_value
+        )
+      }
     }
 
-    // Get Razorpay plan ID
-    const razorpayPlanId = getPlanId(planId)
-
-    // Create subscription
-    const rzpSubscription = await razorpay.subscriptions.create({
-      plan_id: razorpayPlanId,
-      customer_notify: 1,
-      total_count: 12, // 12 months
+    const receipt = `ord_${userId.slice(-8)}_${Date.now().toString().slice(-8)}`
+    
+    const order = await razorpay.orders.create({
+      amount: finalPrice * 100,
+      currency: 'INR',
+      receipt,
       notes: {
         userId,
         planId,
         couponId: couponId ?? '',
+        originalPrice: plan.price_inr,
+        finalPrice,
       }
     })
 
     return NextResponse.json({
-      subscriptionId: rzpSubscription.id,
-      customerId,
+      orderId: order.id,
+      amount: finalPrice * 100,
+      currency: 'INR',
+      planName: plan.name,
     })
 
   } catch (err: any) {
-    console.error('Create subscription error:', err)
+    console.error('Create order error:', err)
     return NextResponse.json({ error: err.message ?? 'Something went wrong' }, { status: 500 })
   }
 }

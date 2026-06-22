@@ -93,9 +93,37 @@ function BillingContent() {
             </span>
           </div>
           <Progress value={usagePercent} className="h-2" />
-          <p className="text-xs text-gray-400 mt-2">
-            {usagePercent}% of monthly limit used
-          </p>
+          <div className="flex items-center justify-between mt-2">
+            <p className="text-xs text-gray-400">
+              {usagePercent}% of monthly limit used
+            </p>
+            {subscription?.renews_at && (
+              <p className="text-xs text-gray-400">
+                Renews {new Date(subscription.renews_at).toLocaleDateString('en-IN', {
+                  day: 'numeric', month: 'short', year: 'numeric'
+                })}
+              </p>
+            )}
+          </div>
+          {/* Show renew button if paid plan */}
+          {subscription?.plan_name !== 'trial' && subscription?.renews_at && (
+            <div className="mt-4 pt-4 border-t">
+              <div className="flex items-center justify-between">
+                <p className="text-sm text-gray-500">
+                  Need to renew your plan?
+                </p>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => router.push(
+                    `/dashboard/billing/upgrade?plan=${subscription.plan_name}`
+                  )}
+                >
+                  Renew now
+                </Button>
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
 

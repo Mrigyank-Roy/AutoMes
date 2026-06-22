@@ -90,9 +90,8 @@ function UpgradeContent() {
   async function handlePayment() {
     setPaymentLoading(true)
     setError('')
-
     try {
-      // Create Razorpay subscription
+      // Create Razorpay order
       const res = await fetch('/api/billing/create-subscription', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -102,30 +101,47 @@ function UpgradeContent() {
           couponId: couponResult?.couponId ?? null,
         })
       })
-
       const data = await res.json()
-
       if (!res.ok) {
         setError(data.error ?? 'Something went wrong')
         setPaymentLoading(false)
         return
       }
-
+      
       // Open Razorpay checkout
       const options = {
         key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID,
-        subscription_id: data.subscriptionId,
+        order_id: data.orderId,
+        amount: data.amount,
+        currency: 'INR',
         name: 'AutoMes',
-        description: `${plan?.name} Plan — Monthly subscription`,
+        description: `${data.planName} Plan — 30 days`,
         prefill: {
           email: userEmail,
         },
         theme: {
           color: '#000000'
         },
-        handler: function (response: any) {
-          // Payment successful
-          console.log('Payment successful:', response)
+        handler: async function (response: any) {
+          // Payment successful — verify on server
+          const verifyRes = await fetch('/api/billing/verify-payment', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              razorpay_order_id: response.razorpay_order_id,
+              razorpay_payment_id: response.razorpay_payment_id,
+              razorpay_signature: response.razorpay_signature,
+              userId,
+              planId,
+              couponId: couponResult?.couponId ?? null,
+            })
+          })
+          const verifyData = await verifyRes.json()
+          if (!verifyRes.ok) {
+            setError(verifyData.error ?? 'Payment verification failed')
+            return
+          }
+          // Success — redirect to billing page
           router.push('/dashboard/billing?success=true')
         },
         modal: {
@@ -134,11 +150,9 @@ function UpgradeContent() {
           }
         }
       }
-
       const rzp = new window.Razorpay(options)
       rzp.open()
       setPaymentLoading(false)
-
     } catch (err) {
       console.error('Payment error:', err)
       setError('Something went wrong. Please try again.')
