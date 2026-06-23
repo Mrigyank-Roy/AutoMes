@@ -24,6 +24,24 @@ export async function POST(request: NextRequest) {
     }
 
     let finalPrice = plan.price_inr
+    let discountAmount = 0
+    let couponCode = null
+
+
+    // Check if user already has a pending payment
+    const { data: existingPending } = await supabase
+      .from('payments')
+      .select('id, plan_id')
+      .eq('user_id', userId)
+      .eq('status', 'paid')
+      .eq('is_active', false)
+      .maybeSingle()
+
+    if (existingPending) {
+      return NextResponse.json({
+        error: `You already have a pending ${existingPending.plan_id} plan renewal. Cancel it first before purchasing a new one.`
+      }, { status: 400 })
+    }
 
     // Apply coupon discount if provided
     if (couponId) {
@@ -39,11 +57,14 @@ export async function POST(request: NextRequest) {
           coupon.discount_type,
           coupon.discount_value
         )
+        discountAmount = plan.price_inr - finalPrice
+        couponCode = coupon.code
       }
     }
 
+    // Create Razorpay order
     const receipt = `ord_${userId.slice(-8)}_${Date.now().toString().slice(-8)}`
-    
+
     const order = await razorpay.orders.create({
       amount: finalPrice * 100,
       currency: 'INR',
@@ -55,6 +76,19 @@ export async function POST(request: NextRequest) {
         originalPrice: plan.price_inr,
         finalPrice,
       }
+    })
+
+    // Log payment attempt in DB
+    await supabase.from('payments').insert({
+      user_id: userId,
+      razorpay_order_id: order.id,
+      plan_id: planId,
+      amount_paid: finalPrice,
+      original_amount: plan.price_inr,
+      coupon_id: couponId ?? null,
+      coupon_code: couponCode,
+      discount_amount: discountAmount,
+      status: 'created',
     })
 
     return NextResponse.json({
