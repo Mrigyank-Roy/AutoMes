@@ -1,25 +1,17 @@
 'use client'
-
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
-import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Switch } from '@/components/ui/switch'
-import { Badge } from '@/components/ui/badge'
 import Link from 'next/link'
 
 export default function NewAutomationPage() {
   const router = useRouter()
-
   const [userId, setUserId] = useState('')
   const [igAccounts, setIgAccounts] = useState<any[]>([])
   const [subscription, setSubscription] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
-
-  // Form state
   const [selectedAccountId, setSelectedAccountId] = useState('')
   const [postUrl, setPostUrl] = useState('')
   const [triggerType, setTriggerType] = useState<'any' | 'keyword'>('keyword')
@@ -27,40 +19,22 @@ export default function NewAutomationPage() {
   const [keywordInput, setKeywordInput] = useState('')
   const [dmMessage, setDmMessage] = useState('')
   const [replyEnabled, setReplyEnabled] = useState(false)
-  const [replyMessages, setReplyMessages] = useState<string[]>([
-    'Check your DMs! 📩',
-    'Sent you a DM! 🙌',
-  ])
+  const [replyMessages, setReplyMessages] = useState<string[]>(['Check your DMs! 📩', 'Sent you a DM! 🙌'])
   const [replyInput, setReplyInput] = useState('')
 
   useEffect(() => {
-    async function loadData() {
+    async function load() {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) { router.push('/login'); return }
-
       setUserId(session.user.id)
-
-      const { data: accounts } = await supabase
-        .from('instagram_accounts')
-        .select('*')
-        .eq('user_id', session.user.id)
-
+      const { data: accounts } = await supabase.from('instagram_accounts').select('*').eq('user_id', session.user.id)
       setIgAccounts(accounts ?? [])
-      if (accounts && accounts.length > 0) {
-        setSelectedAccountId(accounts[0].id)
-      }
-
-      const { data: sub } = await supabase
-        .from('subscriptions')
-        .select('*')
-        .eq('user_id', session.user.id)
-        .single()
-
+      if (accounts?.length) setSelectedAccountId(accounts[0].id)
+      const { data: sub } = await supabase.from('subscriptions').select('*').eq('user_id', session.user.id).single()
       setSubscription(sub)
       setLoading(false)
     }
-
-    loadData()
+    load()
   }, [router])
 
   function addKeyword() {
@@ -70,415 +44,191 @@ export default function NewAutomationPage() {
     setKeywordInput('')
   }
 
-  function removeKeyword(kw: string) {
-    setKeywords(prev => prev.filter(k => k !== kw))
-  }
-
-  function handleKeywordKeyDown(e: React.KeyboardEvent) {
-    if (e.key === 'Enter' || e.key === ',') {
-      e.preventDefault()
-      addKeyword()
-    }
-  }
-
-  function addReplyMessage() {
-    const msg = replyInput.trim()
-    if (!msg || replyMessages.includes(msg)) return
-    if (replyMessages.length >= 6) {
-      setError('Maximum 6 reply variations allowed')
-      return
-    }
-    setReplyMessages(prev => [...prev, msg])
-    setReplyInput('')
-  }
-
-  function removeReplyMessage(msg: string) {
-    if (replyMessages.length <= 1) return
-    setReplyMessages(prev => prev.filter(m => m !== msg))
-  }
-
   async function handleSubmit() {
     setError('')
-
-    if (!selectedAccountId) {
-      setError('Please select an Instagram account')
-      return
-    }
-    if (!postUrl.trim()) {
-      setError('Please enter an Instagram post URL')
-      return
-    }
-    if (!postUrl.includes('instagram.com/p/')) {
-      setError('Please enter a valid Instagram post URL (instagram.com/p/...)')
-      return
-    }
-    if (triggerType === 'keyword' && keywords.length === 0) {
-      setError('Please add at least one keyword')
-      return
-    }
-    if (!dmMessage.trim()) {
-      setError('Please write a DM message')
-      return
-    }
-    if (dmMessage.length > 1000) {
-      setError('DM message must be under 1000 characters')
-      return
-    }
-
+    if (!selectedAccountId) return setError('Please select an Instagram account')
+    if (!postUrl.trim() || !postUrl.includes('instagram.com/p/')) return setError('Please enter a valid Instagram post URL')
+    if (triggerType === 'keyword' && keywords.length === 0) return setError('Please add at least one keyword')
+    if (!dmMessage.trim()) return setError('Please write a DM message')
+    if (dmMessage.length > 1000) return setError('DM message must be under 1000 characters')
     setSubmitting(true)
-
     const res = await fetch('/api/automations/create', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        userId,
-        igAccountId: selectedAccountId,
-        postUrl: postUrl.trim(),
-        triggerType,
-        keywords,
-        dmMessage: dmMessage.trim(),
-        replyEnabled,
-        replyMessages,
-      })
+      body: JSON.stringify({ userId, igAccountId: selectedAccountId, postUrl: postUrl.trim(), triggerType, keywords, dmMessage: dmMessage.trim(), replyEnabled, replyMessages })
     })
-
     const data = await res.json()
-
-    if (!res.ok) {
-      setError(data.error ?? 'Something went wrong')
-      setSubmitting(false)
-      return
-    }
-
+    if (!res.ok) { setError(data.error ?? 'Something went wrong'); setSubmitting(false); return }
     router.push('/dashboard/automations?created=true')
   }
 
-  const canUseReply = subscription &&
-    ['starter', 'pro', 'agency'].includes(subscription.plan_name)
+  const canReply = subscription && ['starter', 'pro', 'agency'].includes(subscription.plan_name)
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <p className="text-sm text-gray-400">Loading...</p>
-      </div>
-    )
-  }
+  if (loading) return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 300 }}><p style={{ color: 'var(--ash)', fontSize: 14 }}>Loading...</p></div>
 
-  if (igAccounts.length === 0) {
-    return (
-      <div className="max-w-2xl">
-        <Card>
-          <CardContent className="py-16 flex flex-col items-center">
-            <p className="text-2xl mb-3">📱</p>
-            <p className="font-medium mb-1">No Instagram account connected</p>
-            <p className="text-sm text-gray-400 mb-6">
-              Connect your Instagram Business account first
-            </p>
-            <Link href="/dashboard/settings">
-              <Button>Connect Instagram</Button>
-            </Link>
-          </CardContent>
-        </Card>
+  if (igAccounts.length === 0) return (
+    <div style={{ maxWidth: 560 }}>
+      <div style={{ background: 'var(--canvas)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--hairline)', padding: 64, textAlign: 'center' }}>
+        <div style={{ fontSize: 48, marginBottom: 16 }}>📱</div>
+        <p style={{ fontSize: 18, fontWeight: 700, color: 'var(--ink)', marginBottom: 8 }}>No Instagram account connected</p>
+        <p style={{ fontSize: 14, color: 'var(--mute)', marginBottom: 28 }}>Connect your Instagram Business account first</p>
+        <Link href="/dashboard/settings" className="btn-primary">Connect Instagram</Link>
       </div>
-    )
-  }
+    </div>
+  )
+
+  const StepLabel = ({ n, label }: { n: number, label: string }) => (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20 }}>
+      <span style={{ width: 28, height: 28, borderRadius: '50%', background: 'var(--ink)', color: '#fff', fontSize: 12, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{n}</span>
+      <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--ink)' }}>{label}</span>
+    </div>
+  )
 
   return (
-    <div className="max-w-2xl">
-      {/* Header */}
-      <div className="flex items-center gap-4 mb-8">
-        <Link href="/dashboard/automations">
-          <Button variant="ghost" size="sm">← Back</Button>
-        </Link>
+    <div style={{ maxWidth: 640 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 32 }}>
+        <Link href="/dashboard/automations" style={{ background: 'var(--card)', border: 'none', borderRadius: 'var(--radius-md)', padding: '8px 14px', fontSize: 13, fontWeight: 600, color: 'var(--mute)', cursor: 'pointer', textDecoration: 'none' }}>← Back</Link>
         <div>
-          <h1 className="text-2xl font-semibold">Create automation</h1>
-          <p className="text-sm text-gray-500 mt-0.5">
-            Set up automatic DMs when people comment on your post
-          </p>
+          <h1 style={{ fontSize: 24, fontWeight: 800, color: 'var(--ink)', letterSpacing: -0.5 }}>Create automation</h1>
+          <p style={{ fontSize: 13, color: 'var(--mute)', marginTop: 2 }}>Set up automatic DMs when people comment on your post</p>
         </div>
       </div>
 
-      <div className="flex flex-col gap-5">
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
 
-        {/* Step 1 — Select Instagram account */}
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium flex items-center gap-2">
-              <span className="w-5 h-5 rounded-full bg-black text-white text-xs flex items-center justify-center">1</span>
-              Instagram account
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {igAccounts.length === 1 ? (
-              <div className="flex items-center gap-2 text-sm">
-                <span className="w-7 h-7 rounded-full bg-gray-100 flex items-center justify-center text-xs">
-                  @
-                </span>
-                <span className="font-medium">@{igAccounts[0].ig_username}</span>
-              </div>
-            ) : (
-              <select
-                value={selectedAccountId}
-                onChange={e => setSelectedAccountId(e.target.value)}
-                className="w-full border rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-black"
-              >
-                {igAccounts.map(acc => (
-                  <option key={acc.id} value={acc.id}>
-                    @{acc.ig_username}
-                  </option>
-                ))}
-              </select>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Step 2 — Post URL */}
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium flex items-center gap-2">
-              <span className="w-5 h-5 rounded-full bg-black text-white text-xs flex items-center justify-center">2</span>
-              Instagram post URL
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <input
-              type="url"
-              value={postUrl}
-              onChange={e => setPostUrl(e.target.value)}
-              placeholder="https://www.instagram.com/p/DZzuPxGAdOY/"
-              className="w-full border rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-black"
-            />
-            <p className="text-xs text-gray-400 mt-2">
-              Open the post on Instagram → tap the three dots → Copy link
-            </p>
-          </CardContent>
-        </Card>
-
-        {/* Step 3 — Trigger type */}
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium flex items-center gap-2">
-              <span className="w-5 h-5 rounded-full bg-black text-white text-xs flex items-center justify-center">3</span>
-              Trigger type
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-3">
-            <label className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
-              triggerType === 'any' ? 'border-black bg-gray-50' : 'border-gray-200'
-            }`}>
-              <input
-                type="radio"
-                name="triggerType"
-                value="any"
-                checked={triggerType === 'any'}
-                onChange={() => setTriggerType('any')}
-                className="mt-0.5"
-              />
-              <div>
-                <p className="text-sm font-medium">Any comment</p>
-                <p className="text-xs text-gray-400 mt-0.5">
-                  Send DM to everyone who comments on this post
-                </p>
-              </div>
-            </label>
-
-            <label className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
-              triggerType === 'keyword' ? 'border-black bg-gray-50' : 'border-gray-200'
-            }`}>
-              <input
-                type="radio"
-                name="triggerType"
-                value="keyword"
-                checked={triggerType === 'keyword'}
-                onChange={() => setTriggerType('keyword')}
-                className="mt-0.5"
-              />
-              <div className="flex-1">
-                <p className="text-sm font-medium">Specific keywords</p>
-                <p className="text-xs text-gray-400 mt-0.5">
-                  Only send DM when comment contains one of your keywords
-                </p>
-
-                {/* Keyword input — shown only when keyword is selected */}
-                {triggerType === 'keyword' && (
-                  <div className="mt-3">
-                    <div className="flex flex-wrap gap-1.5 mb-2">
-                      {keywords.map(kw => (
-                        <span
-                          key={kw}
-                          className="flex items-center gap-1 text-xs bg-black text-white px-2.5 py-1 rounded-full"
-                        >
-                          {kw}
-                          <button
-                            onClick={() => removeKeyword(kw)}
-                            className="hover:text-gray-300 ml-0.5"
-                          >
-                            ×
-                          </button>
-                        </span>
-                      ))}
-                    </div>
-                    <div className="flex gap-2">
-                      <input
-                        type="text"
-                        value={keywordInput}
-                        onChange={e => setKeywordInput(e.target.value)}
-                        onKeyDown={handleKeywordKeyDown}
-                        placeholder="Type keyword and press Enter"
-                        className="flex-1 border rounded-lg px-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-black"
-                      />
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={addKeyword}
-                      >
-                        Add
-                      </Button>
-                    </div>
-                    <p className="text-xs text-gray-400 mt-1">
-                      Press Enter or comma to add. Not case sensitive.
-                    </p>
-                  </div>
-                )}
-              </div>
-            </label>
-          </CardContent>
-        </Card>
-
-        {/* Step 4 — DM message */}
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium flex items-center gap-2">
-              <span className="w-5 h-5 rounded-full bg-black text-white text-xs flex items-center justify-center">4</span>
-              DM message
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <textarea
-              value={dmMessage}
-              onChange={e => setDmMessage(e.target.value)}
-              placeholder="Hey! Here's the free guide you asked for 👉 [your link here]"
-              rows={4}
-              maxLength={1000}
-              className="w-full border rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-black resize-none"
-            />
-            <div className="flex justify-between mt-1">
-              <p className="text-xs text-gray-400">
-                This message will be sent automatically to every commenter
-              </p>
-              <p className={`text-xs ${dmMessage.length > 900 ? 'text-red-400' : 'text-gray-400'}`}>
-                {dmMessage.length} / 1000
-              </p>
+        {/* Step 1 */}
+        <div style={{ background: 'var(--canvas)', borderRadius: 'var(--radius-md)', border: '1px solid var(--hairline)', padding: 24 }}>
+          <StepLabel n={1} label="Instagram account" />
+          {igAccounts.length === 1 ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', background: 'var(--surface)', borderRadius: 'var(--radius-md)', border: '1px solid var(--hairline)' }}>
+              <div style={{ width: 32, height: 32, borderRadius: '50%', background: 'var(--secondary-bg)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14 }}>@</div>
+              <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--ink)' }}>@{igAccounts[0].ig_username}</span>
+              <span style={{ marginLeft: 'auto', background: '#e8f8ed', color: '#1a6b3a', borderRadius: 'var(--radius-full)', padding: '2px 10px', fontSize: 11, fontWeight: 700 }}>Connected</span>
             </div>
-          </CardContent>
-        </Card>
+          ) : (
+            <select value={selectedAccountId} onChange={e => setSelectedAccountId(e.target.value)}>
+              {igAccounts.map(acc => <option key={acc.id} value={acc.id}>@{acc.ig_username}</option>)}
+            </select>
+          )}
+        </div>
 
-        {/* Step 5 — Public comment reply */}
-        <Card className={!canUseReply ? 'opacity-75' : ''}>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium flex items-center gap-2">
-              <span className="w-5 h-5 rounded-full bg-black text-white text-xs flex items-center justify-center">5</span>
-              Public comment reply
-              <Badge variant="secondary" className="text-xs ml-1">Starter+</Badge>
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {!canUseReply ? (
-              <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-dashed">
-                <div>
-                  <p className="text-sm font-medium">🔒 Available on Starter plan</p>
-                  <p className="text-xs text-gray-400 mt-0.5">
-                    Automatically reply to comments to drive more engagement
-                  </p>
-                </div>
-                <Link href="/dashboard/billing">
-                  <Button size="sm" variant="outline">Upgrade</Button>
-                </Link>
-              </div>
-            ) : (
-              <div className="flex flex-col gap-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium">Reply to comments publicly</p>
-                    <p className="text-xs text-gray-400 mt-0.5">
-                      Post a public reply like "Check your DMs!" — rotated randomly
-                    </p>
-                  </div>
-                  <Switch
-                    checked={replyEnabled}
-                    onCheckedChange={setReplyEnabled}
-                  />
-                </div>
+        {/* Step 2 */}
+        <div style={{ background: 'var(--canvas)', borderRadius: 'var(--radius-md)', border: '1px solid var(--hairline)', padding: 24 }}>
+          <StepLabel n={2} label="Instagram post URL" />
+          <input type="url" value={postUrl} onChange={e => setPostUrl(e.target.value)} placeholder="https://www.instagram.com/p/DZzuPxGAdOY/" />
+          <p style={{ fontSize: 12, color: 'var(--ash)', marginTop: 8 }}>Open the post on Instagram → tap the three dots → Copy link</p>
+        </div>
 
-                {replyEnabled && (
-                  <div>
-                    <p className="text-xs font-medium text-gray-600 mb-2">
-                      Reply variations (picked randomly)
-                    </p>
-                    <div className="flex flex-col gap-2 mb-3">
-                      {replyMessages.map((msg, i) => (
-                        <div key={i} className="flex items-center gap-2">
-                          <span className="flex-1 text-sm border rounded-lg px-3 py-1.5 bg-gray-50">
-                            {msg}
+        {/* Step 3 */}
+        <div style={{ background: 'var(--canvas)', borderRadius: 'var(--radius-md)', border: '1px solid var(--hairline)', padding: 24 }}>
+          <StepLabel n={3} label="Trigger type" />
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {[
+              { value: 'any', title: 'Any comment', desc: 'Send DM to everyone who comments on this post' },
+              { value: 'keyword', title: 'Specific keywords', desc: 'Only send DM when comment contains one of your keywords' },
+            ].map(opt => (
+              <label key={opt.value} style={{ display: 'flex', gap: 14, padding: '14px 16px', borderRadius: 'var(--radius-md)', border: `2px solid ${triggerType === opt.value ? 'var(--ink)' : 'var(--hairline)'}`, cursor: 'pointer', background: triggerType === opt.value ? 'var(--surface)' : 'transparent', transition: 'all 0.15s' }}>
+                <input type="radio" name="trigger" value={opt.value} checked={triggerType === opt.value} onChange={() => setTriggerType(opt.value as any)} style={{ marginTop: 2 }} />
+                <div style={{ flex: 1 }}>
+                  <p style={{ fontSize: 14, fontWeight: 700, color: 'var(--ink)' }}>{opt.title}</p>
+                  <p style={{ fontSize: 12, color: 'var(--mute)', marginTop: 2 }}>{opt.desc}</p>
+                  {opt.value === 'keyword' && triggerType === 'keyword' && (
+                    <div style={{ marginTop: 14 }}>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
+                        {keywords.map(kw => (
+                          <span key={kw} style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'var(--ink)', color: '#fff', borderRadius: 'var(--radius-full)', padding: '4px 12px', fontSize: 12, fontWeight: 700 }}>
+                            {kw}
+                            <button onClick={() => setKeywords(prev => prev.filter(k => k !== kw))} style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.7)', cursor: 'pointer', fontSize: 14, lineHeight: 1, padding: 0 }}>×</button>
                           </span>
-                          <button
-                            onClick={() => removeReplyMessage(msg)}
-                            className="text-gray-300 hover:text-red-400 text-lg leading-none"
-                          >
-                            ×
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                    {replyMessages.length < 6 && (
-                      <div className="flex gap-2">
-                        <input
-                          type="text"
-                          value={replyInput}
-                          onChange={e => setReplyInput(e.target.value)}
-                          onKeyDown={e => e.key === 'Enter' && addReplyMessage()}
-                          placeholder="Add another reply variation..."
-                          className="flex-1 border rounded-lg px-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-black"
-                        />
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={addReplyMessage}
-                        >
-                          Add
-                        </Button>
+                        ))}
                       </div>
-                    )}
-                  </div>
-                )}
+                      <div style={{ display: 'flex', gap: 8 }}>
+                        <input type="text" value={keywordInput} onChange={e => setKeywordInput(e.target.value)} onKeyDown={e => (e.key === 'Enter' || e.key === ',') && (e.preventDefault(), addKeyword())} placeholder="Type keyword and press Enter" style={{ flex: 1 }} />
+                        <button onClick={addKeyword} className="btn-secondary" style={{ padding: '10px 16px', fontSize: 13 }}>Add</button>
+                      </div>
+                      <p style={{ fontSize: 11, color: 'var(--ash)', marginTop: 6 }}>Press Enter or comma to add. Not case sensitive.</p>
+                    </div>
+                  )}
+                </div>
+              </label>
+            ))}
+          </div>
+        </div>
+
+        {/* Step 4 */}
+        <div style={{ background: 'var(--canvas)', borderRadius: 'var(--radius-md)', border: '1px solid var(--hairline)', padding: 24 }}>
+          <StepLabel n={4} label="DM message" />
+          <textarea value={dmMessage} onChange={e => setDmMessage(e.target.value)} placeholder="Hey! Here's the free guide you asked for 👉 [your link here]" rows={4} maxLength={1000} style={{ resize: 'none' }} />
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8 }}>
+            <p style={{ fontSize: 12, color: 'var(--ash)' }}>This message will be sent automatically to every commenter</p>
+            <p style={{ fontSize: 12, color: dmMessage.length > 900 ? 'var(--red)' : 'var(--ash)', fontWeight: dmMessage.length > 900 ? 700 : 400 }}>{dmMessage.length} / 1000</p>
+          </div>
+        </div>
+
+        {/* Step 5 — Public reply */}
+        <div style={{ background: 'var(--canvas)', borderRadius: 'var(--radius-md)', border: '1px solid var(--hairline)', padding: 24, opacity: canReply ? 1 : 0.8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 20 }}>
+            <span style={{ width: 28, height: 28, borderRadius: '50%', background: 'var(--ink)', color: '#fff', fontSize: 12, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>5</span>
+            <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--ink)' }}>Public comment reply</span>
+            <span style={{ background: '#fff0f0', color: 'var(--red)', borderRadius: 'var(--radius-full)', padding: '2px 10px', fontSize: 11, fontWeight: 700 }}>Starter+</span>
+          </div>
+
+          {!canReply ? (
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', background: 'var(--surface)', borderRadius: 'var(--radius-md)', border: '1px dashed var(--hairline)' }}>
+              <div>
+                <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)' }}>🔒 Available on Starter plan and above</p>
+                <p style={{ fontSize: 12, color: 'var(--mute)', marginTop: 2 }}>Automatically reply to comments to drive more engagement</p>
               </div>
-            )}
-          </CardContent>
-        </Card>
+              <Link href="/dashboard/billing" className="btn-secondary" style={{ padding: '8px 16px', fontSize: 13 }}>Upgrade</Link>
+            </div>
+          ) : (
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+                <div>
+                  <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>Reply to comments publicly</p>
+                  <p style={{ fontSize: 12, color: 'var(--mute)', marginTop: 2 }}>Post a reply like "Check your DMs!" — rotated randomly</p>
+                </div>
+                <button onClick={() => setReplyEnabled(!replyEnabled)} style={{ width: 44, height: 24, borderRadius: 'var(--radius-full)', background: replyEnabled ? 'var(--ink)' : 'var(--stone)', border: 'none', cursor: 'pointer', position: 'relative', transition: 'background 0.2s' }}>
+                  <span style={{ position: 'absolute', top: 3, left: replyEnabled ? 22 : 3, width: 18, height: 18, borderRadius: '50%', background: '#fff', transition: 'left 0.2s' }} />
+                </button>
+              </div>
+              {replyEnabled && (
+                <div>
+                  <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--mute)', marginBottom: 10 }}>Reply variations (picked randomly):</p>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
+                    {replyMessages.map((msg, i) => (
+                      <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                        <span style={{ flex: 1, padding: '10px 14px', background: 'var(--surface)', borderRadius: 'var(--radius-md)', fontSize: 13, color: 'var(--ink)', border: '1px solid var(--hairline)' }}>{msg}</span>
+                        <button onClick={() => setReplyMessages(prev => prev.filter((_, j) => j !== i))} style={{ background: 'none', border: 'none', color: 'var(--ash)', cursor: 'pointer', fontSize: 18, lineHeight: 1 }}>×</button>
+                      </div>
+                    ))}
+                  </div>
+                  {replyMessages.length < 6 && (
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <input type="text" value={replyInput} onChange={e => setReplyInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && (replyInput.trim() && setReplyMessages(p => [...p, replyInput.trim()]), setReplyInput(''))} placeholder="Add another reply variation..." />
+                      <button onClick={() => { if (replyInput.trim()) { setReplyMessages(p => [...p, replyInput.trim()]); setReplyInput('') } }} className="btn-secondary" style={{ padding: '10px 16px', fontSize: 13 }}>Add</button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
 
         {/* Error */}
         {error && (
-          <div className="bg-red-50 text-red-600 text-sm px-4 py-3 rounded-lg">
+          <div style={{ background: '#fff0f0', border: '1px solid #ffd0d0', borderRadius: 'var(--radius-md)', padding: '12px 16px', fontSize: 13, color: 'var(--red)', fontWeight: 500 }}>
             {error}
           </div>
         )}
 
-        {/* Submit */}
-        <div className="flex gap-3 pb-8">
-          <Link href="/dashboard/automations" className="flex-1">
-            <Button variant="outline" className="w-full">Cancel</Button>
-          </Link>
-          <Button
-            onClick={handleSubmit}
-            disabled={submitting}
-            className="flex-1"
-          >
-            {submitting ? 'Creating automation...' : 'Create automation'}
-          </Button>
+        {/* Buttons */}
+        <div style={{ display: 'flex', gap: 12, paddingBottom: 32 }}>
+          <Link href="/dashboard/automations" className="btn-secondary" style={{ flex: 1, justifyContent: 'center', padding: '13px' }}>Cancel</Link>
+          <button onClick={handleSubmit} disabled={submitting} className="btn-primary" style={{ flex: 1, justifyContent: 'center', padding: '13px', fontSize: 15, opacity: submitting ? 0.7 : 1 }}>
+            {submitting ? 'Creating...' : 'Create automation →'}
+          </button>
         </div>
-
       </div>
     </div>
   )
