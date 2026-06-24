@@ -1,27 +1,9 @@
 'use client'
-
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Progress } from '@/components/ui/progress'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
 import Link from 'next/link'
-import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer
-} from 'recharts'
-
-interface DayData {
-  day: string
-  count: number
-}
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 
 export default function DashboardPage() {
   const router = useRouter()
@@ -29,212 +11,112 @@ export default function DashboardPage() {
   const [subscription, setSubscription] = useState<any>(null)
   const [activeAutomations, setActiveAutomations] = useState(0)
   const [dmsToday, setDmsToday] = useState(0)
-  const [weeklyData, setWeeklyData] = useState<DayData[]>([])
+  const [weeklyData, setWeeklyData] = useState<any[]>([])
 
   useEffect(() => {
-    async function loadData() {
+    async function load() {
       const { data: { session } } = await supabase.auth.getSession()
-      if (!session) {
-        router.push('/login')
-        return
-      }
+      if (!session) { router.push('/login'); return }
+      const uid = session.user.id
 
-      const userId = session.user.id
-
-      // Get subscription
-      const { data: sub } = await supabase
-        .from('subscriptions')
-        .select('*')
-        .eq('user_id', userId)
-        .single()
+      const { data: sub } = await supabase.from('subscriptions').select('*').eq('user_id', uid).single()
       setSubscription(sub)
 
-      // Get active automations count
-      const { count } = await supabase
-        .from('automations')
-        .select('*', { count: 'exact', head: true })
-        .eq('user_id', userId)
-        .eq('is_active', true)
+      const { count } = await supabase.from('automations').select('*', { count: 'exact', head: true }).eq('user_id', uid).eq('is_active', true)
       setActiveAutomations(count ?? 0)
 
-      // Get DMs sent today
-      const todayStart = new Date()
-      todayStart.setHours(0, 0, 0, 0)
+      const today = new Date(); today.setHours(0, 0, 0, 0)
+      const { count: tc } = await supabase.from('dm_logs').select('*', { count: 'exact', head: true }).eq('user_id', uid).eq('status', 'sent').gte('sent_at', today.toISOString())
+      setDmsToday(tc ?? 0)
 
-      const { count: todayCount } = await supabase
-        .from('dm_logs')
-        .select('*', { count: 'exact', head: true })
-        .eq('user_id', userId)
-        .eq('status', 'sent')
-        .gte('sent_at', todayStart.toISOString())
-      setDmsToday(todayCount ?? 0)
-
-      // Get DMs per day for last 7 days
-      const sevenDaysAgo = new Date()
-      sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6)
-      sevenDaysAgo.setHours(0, 0, 0, 0)
-
-      const { data: logs } = await supabase
-        .from('dm_logs')
-        .select('sent_at')
-        .eq('user_id', userId)
-        .eq('status', 'sent')
-        .gte('sent_at', sevenDaysAgo.toISOString())
-
-      // Build 7-day chart data
-      const days: DayData[] = []
+      const seven = new Date(); seven.setDate(seven.getDate() - 6); seven.setHours(0, 0, 0, 0)
+      const { data: logs } = await supabase.from('dm_logs').select('sent_at').eq('user_id', uid).eq('status', 'sent').gte('sent_at', seven.toISOString())
+      const days = []
       for (let i = 6; i >= 0; i--) {
-        const date = new Date()
-        date.setDate(date.getDate() - i)
-        const dayStr = date.toLocaleDateString('en-US', { weekday: 'short' })
-        const dateStr = date.toISOString().split('T')[0]
-        const count = logs?.filter(l =>
-          l.sent_at.startsWith(dateStr)
-        ).length ?? 0
-        days.push({ day: dayStr, count })
+        const d = new Date(); d.setDate(d.getDate() - i)
+        const str = d.toISOString().split('T')[0]
+        days.push({ day: d.toLocaleDateString('en-US', { weekday: 'short' }), count: logs?.filter(l => l.sent_at.startsWith(str)).length ?? 0 })
       }
       setWeeklyData(days)
       setLoading(false)
     }
-
-    loadData()
+    load()
   }, [router])
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <p className="text-sm text-gray-400">Loading...</p>
-      </div>
-    )
-  }
+  if (loading) return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 300 }}><p style={{ color: 'var(--ash)', fontSize: 14 }}>Loading...</p></div>
 
-  const usagePercent = subscription
-    ? Math.round((subscription.dms_used_this_month / subscription.dm_limit_monthly) * 100)
-    : 0
+  const used = subscription?.dms_used_this_month ?? 0
+  const limit = subscription?.dm_limit_monthly ?? 50
+  const pct = Math.round((used / limit) * 100)
 
   return (
-    <div className="max-w-4xl">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-8">
+    <div style={{ maxWidth: 900 }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 32 }}>
         <div>
-          <h1 className="text-2xl font-semibold">Dashboard</h1>
-          <p className="text-sm text-gray-500 mt-1">
-            Welcome back — here's how your automations are performing
-          </p>
+          <h1 style={{ fontSize: 28, fontWeight: 800, color: 'var(--ink)', letterSpacing: -0.5 }}>Dashboard</h1>
+          <p style={{ fontSize: 14, color: 'var(--mute)', marginTop: 4 }}>Here's how your automations are performing</p>
         </div>
-        <Link href="/dashboard/automations/new">
-          <Button>+ Create automation</Button>
-        </Link>
+        <Link href="/dashboard/automations/new" className="btn-primary">+ Create automation</Link>
       </div>
 
-      {/* Stats cards */}
-      <div className="grid grid-cols-3 gap-4 mb-8">
+      {/* Stats */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 16, marginBottom: 24 }}>
         {/* DMs this month */}
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-gray-500">
-              DMs this month
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-semibold mb-2">
-              {subscription?.dms_used_this_month ?? 0}
-              <span className="text-gray-400 text-lg font-normal">
-                {' '}/ {subscription?.dm_limit_monthly ?? 50}
-              </span>
-            </div>
-            <Progress value={usagePercent} className="h-1.5" />
-            <p className="text-xs text-gray-400 mt-1.5">{usagePercent}% of plan used</p>
-          </CardContent>
-        </Card>
+        <div style={{ background: 'var(--canvas)', borderRadius: 'var(--radius-md)', border: '1px solid var(--hairline)', padding: 24 }}>
+          <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--ash)', marginBottom: 10, textTransform: 'uppercase', letterSpacing: 0.5 }}>DMs this month</p>
+          <p style={{ fontSize: 32, fontWeight: 800, color: 'var(--ink)', lineHeight: 1 }}>
+            {used}<span style={{ fontSize: 16, color: 'var(--stone)', fontWeight: 400 }}> / {limit}</span>
+          </p>
+          <div style={{ height: 6, background: 'var(--card)', borderRadius: 'var(--radius-full)', marginTop: 14, overflow: 'hidden' }}>
+            <div style={{ height: '100%', width: `${pct}%`, background: pct > 80 ? 'var(--red)' : 'var(--ink)', borderRadius: 'var(--radius-full)', transition: 'width 0.5s' }} />
+          </div>
+          <p style={{ fontSize: 11, color: 'var(--ash)', marginTop: 6 }}>{pct}% of plan used</p>
+        </div>
 
-        {/* DMs today */}
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-gray-500">
-              DMs sent today
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-semibold">{dmsToday}</div>
-            <p className="text-xs text-gray-400 mt-1">since midnight</p>
-          </CardContent>
-        </Card>
+        <div style={{ background: 'var(--canvas)', borderRadius: 'var(--radius-md)', border: '1px solid var(--hairline)', padding: 24 }}>
+          <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--ash)', marginBottom: 10, textTransform: 'uppercase', letterSpacing: 0.5 }}>DMs today</p>
+          <p style={{ fontSize: 32, fontWeight: 800, color: 'var(--ink)', lineHeight: 1 }}>{dmsToday}</p>
+          <p style={{ fontSize: 12, color: 'var(--ash)', marginTop: 14 }}>since midnight</p>
+        </div>
 
-        {/* Active automations */}
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-gray-500">
-              Active automations
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-semibold">{activeAutomations}</div>
-            <p className="text-xs text-gray-400 mt-1">running right now</p>
-          </CardContent>
-        </Card>
+        <div style={{ background: 'var(--canvas)', borderRadius: 'var(--radius-md)', border: '1px solid var(--hairline)', padding: 24 }}>
+          <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--ash)', marginBottom: 10, textTransform: 'uppercase', letterSpacing: 0.5 }}>Active automations</p>
+          <p style={{ fontSize: 32, fontWeight: 800, color: 'var(--ink)', lineHeight: 1 }}>{activeAutomations}</p>
+          <p style={{ fontSize: 12, color: 'var(--ash)', marginTop: 14 }}>running right now</p>
+        </div>
       </div>
 
-      {/* Weekly chart */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base font-medium">DMs sent this week</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {weeklyData.every(d => d.count === 0) ? (
-            <div className="h-48 flex items-center justify-center">
-              <div className="text-center">
-                <p className="text-gray-400 text-sm">No DMs sent this week yet</p>
-                <p className="text-gray-300 text-xs mt-1">
-                  Create an automation to get started
-                </p>
-              </div>
-            </div>
-          ) : (
-            <ResponsiveContainer width="100%" height={200}>
-              <BarChart data={weeklyData} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                <XAxis
-                  dataKey="day"
-                  tick={{ fontSize: 12, fill: '#9ca3af' }}
-                  axisLine={false}
-                  tickLine={false}
-                />
-                <YAxis
-                  tick={{ fontSize: 12, fill: '#9ca3af' }}
-                  axisLine={false}
-                  tickLine={false}
-                  allowDecimals={false}
-                />
-                <Tooltip
-                  contentStyle={{
-                    border: '1px solid #e5e7eb',
-                    borderRadius: '8px',
-                    fontSize: '12px'
-                  }}
-                  formatter={(value) => [`${value} DMs`, 'Sent']}
-                />
-                <Bar dataKey="count" fill="#000000" radius={[4, 4, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          )}
-        </CardContent>
-      </Card>
+      {/* Chart */}
+      <div style={{ background: 'var(--canvas)', borderRadius: 'var(--radius-md)', border: '1px solid var(--hairline)', padding: 28 }}>
+        <p style={{ fontSize: 14, fontWeight: 700, color: 'var(--ink)', marginBottom: 20 }}>DMs sent this week</p>
+        {weeklyData.every(d => d.count === 0) ? (
+          <div style={{ height: 180, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+            <p style={{ color: 'var(--ash)', fontSize: 14 }}>No DMs sent this week yet</p>
+            <Link href="/dashboard/automations/new" style={{ color: 'var(--red)', fontSize: 13, fontWeight: 600, marginTop: 8, textDecoration: 'none' }}>Create your first automation →</Link>
+          </div>
+        ) : (
+          <ResponsiveContainer width="100%" height={180}>
+            <BarChart data={weeklyData} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--hairline)" />
+              <XAxis dataKey="day" tick={{ fontSize: 11, fill: 'var(--ash)' }} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fontSize: 11, fill: 'var(--ash)' }} axisLine={false} tickLine={false} allowDecimals={false} />
+              <Tooltip contentStyle={{ border: '1px solid var(--hairline)', borderRadius: 12, fontSize: 12 }} formatter={(v) => [`${v} DMs`, 'Sent']} />
+              <Bar dataKey="count" fill="var(--ink)" radius={[4, 4, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        )}
+      </div>
 
-      {/* Plan info */}
+      {/* Plan bar */}
       {subscription && (
-        <div className="mt-4 p-4 bg-gray-50 rounded-xl border flex items-center justify-between">
+        <div style={{ marginTop: 16, padding: '16px 20px', background: 'var(--canvas)', borderRadius: 'var(--radius-md)', border: '1px solid var(--hairline)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div>
-            <p className="text-sm font-medium capitalize">{subscription.plan_name} plan</p>
-            <p className="text-xs text-gray-400 mt-0.5">
-              Resets on {subscription.renews_at
-                ? new Date(subscription.renews_at).toLocaleDateString()
-                : 'next billing date'}
+            <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)', textTransform: 'capitalize' }}>{subscription.plan_name} plan</p>
+            <p style={{ fontSize: 11, color: 'var(--ash)', marginTop: 2 }}>
+              {subscription.renews_at ? `Renews ${new Date(subscription.renews_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}` : 'Free trial'}
             </p>
           </div>
-          <Link href="/dashboard/billing">
-            <Button variant="outline" size="sm">Upgrade plan</Button>
-          </Link>
+          <Link href="/dashboard/billing" className="btn-secondary" style={{ padding: '8px 16px', fontSize: 13 }}>Upgrade plan</Link>
         </div>
       )}
     </div>
