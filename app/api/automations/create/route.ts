@@ -54,7 +54,14 @@ export async function POST(request: NextRequest) {
     const mediaData = await mediaRes.json()
 
     if (mediaData.error) {
-      return NextResponse.json({ error: 'Failed to fetch posts from Instagram' }, { status: 400 })
+      console.error('IG me/media error:', JSON.stringify(mediaData.error, null, 2))
+      return NextResponse.json({
+        error: 'Failed to fetch posts from Instagram',
+        igError: mediaData.error.message,
+        igCode: mediaData.error.code,
+        igSubcode: mediaData.error.error_subcode,
+        igType: mediaData.error.type,
+      }, { status: 400 })
     }
 
     // Find the post matching this shortcode
