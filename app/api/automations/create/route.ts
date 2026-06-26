@@ -39,7 +39,7 @@ export async function POST(request: NextRequest) {
 
     // Extract shortcode from URL
     // https://www.instagram.com/p/DZzuPxGAdOY/ → DZzuPxGAdOY
-    const shortcodeMatch = postUrl.match(/\/p\/([A-Za-z0-9_-]+)/)
+    const shortcodeMatch = postUrl.match(/\/(?:p|reel|reels|tv)\/([A-Za-z0-9_-]+)/)
     if (!shortcodeMatch) {
       return NextResponse.json({ error: 'Invalid Instagram post URL' }, { status: 400 })
     }

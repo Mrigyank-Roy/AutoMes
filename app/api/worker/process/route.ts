@@ -48,6 +48,19 @@ export async function POST(request: NextRequest) {
         return
       }
 
+      // Step 1b — Check opt-out list
+      const { data: isOptedOut } = await supabase
+        .from('dm_optouts')
+        .select('id')
+        .eq('ig_account_id', igAccountId)
+        .eq('blocked_commenter_ig_id', commenterId)
+        .maybeSingle()
+
+      if (isOptedOut) {
+        console.log(`User ${commenterId} is on opt-out list — skipping DM`)
+        return
+      }
+
       // Step 2 — Check DM limit
       const { data: subscription } = await supabase
         .from('subscriptions')
