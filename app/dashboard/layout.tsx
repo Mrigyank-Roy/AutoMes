@@ -10,6 +10,7 @@ const nav = [
   { label: 'DM Logs', href: '/dashboard/logs', icon: '📋' },
   { label: 'Settings', href: '/dashboard/settings', icon: '⚙️' },
   { label: 'Billing', href: '/dashboard/billing', icon: '💳' },
+  { label: 'App Review', href: '/dashboard/review-checklist', icon: '✅' },
 ]
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {

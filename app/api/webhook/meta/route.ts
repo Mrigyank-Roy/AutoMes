@@ -22,6 +22,8 @@ export async function POST(request: NextRequest) {
   const body = await request.json()
   console.log('📨 Webhook received:', JSON.stringify(body, null, 2))
 
+  const supabase = createServiceSupabaseClient()
+
   try {
     const entries = body.entry ?? []
 
@@ -30,85 +32,148 @@ export async function POST(request: NextRequest) {
       const igAccountId = entry.id
 
       for (const change of changes) {
-        if (change.field !== 'comments') continue
 
-        const value = change.value
-        const postId = value?.media?.id
-        const commentText = value?.text ?? ''
-        const commenterId = value?.from?.id
-        const commenterUsername = value?.from?.username
-        const commentId = value?.id
+        // ── COMMENTS ──────────────────────────────────────────
+        if (change.field === 'comments') {
+          const value = change.value
+          const postId = value?.media?.id
+          const commentText = value?.text ?? ''
+          const commenterId = value?.from?.id
+          const commenterUsername = value?.from?.username
+          const commentId = value?.id
 
-        if (!postId || !commenterId) continue
+          if (!postId || !commenterId) continue
 
-        console.log(`💬 Comment on post ${postId}: "${commentText}" by @${commenterUsername}`)
+          console.log(`💬 Comment on post ${postId}: "${commentText}" by @${commenterUsername}`)
 
-        const supabase = createServiceSupabaseClient()
+          // Find the instagram_account in our DB
+          const { data: igAccount } = await supabase
+            .from('instagram_accounts')
+            .select('id, user_id, access_token_enc, token_expires_at')
+            .eq('ig_account_id', igAccountId)
+            .single()
 
-        // Step 1 — Find the instagram_account in our DB matching this IG account
-        const { data: igAccount } = await supabase
-          .from('instagram_accounts')
-          .select('id, user_id, access_token_enc, token_expires_at')
-          .eq('ig_account_id', igAccountId)
-          .single()
-
-        if (!igAccount) {
-          console.log(`No account found for ig_account_id: ${igAccountId}`)
-          continue
-        }
-
-        // Step 2 — Find active automations for this post
-        const { data: automations } = await supabase
-          .from('automations')
-          .select('*')
-          .eq('ig_account_id', igAccount.id)
-          .eq('post_id', postId)
-          .eq('is_active', true)
-
-        if (!automations || automations.length === 0) {
-          console.log(`No active automations for post ${postId}`)
-          continue
-        }
-
-        for (const automation of automations) {
-          // Step 3 — Check if comment matches trigger
-          let shouldSend = false
-
-          if (automation.trigger_type === 'any') {
-            shouldSend = true
-          } else if (automation.trigger_type === 'keyword' && automation.keywords) {
-            const lowerComment = commentText.toLowerCase()
-            shouldSend = automation.keywords.some(
-              (kw: string) => lowerComment.includes(kw.toLowerCase())
-            )
-          }
-
-          if (!shouldSend) {
-            console.log(`❌ No keyword match for "${commentText}"`)
+          if (!igAccount) {
+            console.log(`No account found for ig_account_id: ${igAccountId}`)
             continue
           }
 
-          console.log(`✅ Match! Queuing DM for @${commenterUsername}`)
+          // Check if commenter has opted out
+          const { data: isOptedOut } = await supabase
+            .from('dm_optouts')
+            .select('id')
+            .eq('ig_account_id', igAccountId)
+            .eq('blocked_commenter_ig_id', commenterId)
+            .maybeSingle()
 
-          // Step 4 — Add to queue
-          await dmQueue.add('send-dm', {
-            automationId: automation.id,
-            commenterId,
-            commenterUsername,
-            commentId,
-            commentText,
-            igAccountId,
-            igDbAccountId: igAccount.id,
-            tokenExpiresAt: igAccount.token_expires_at,
-            accessTokenEnc: igAccount.access_token_enc,
-            userId: igAccount.user_id,
-            dmMessage: automation.dm_message,
-            replyEnabled: automation.reply_enabled,
-            replyMessages: automation.reply_messages,
-          })
+          if (isOptedOut) {
+            console.log(`User ${commenterId} has opted out — skipping`)
+            continue
+          }
 
-          console.log(`📬 Job added to queue for @${commenterUsername}`)
+          // Find active automations for this post
+          const { data: automations } = await supabase
+            .from('automations')
+            .select('*')
+            .eq('ig_account_id', igAccount.id)
+            .eq('post_id', postId)
+            .eq('is_active', true)
+
+          if (!automations || automations.length === 0) {
+            console.log(`No active automations for post ${postId}`)
+            continue
+          }
+
+          for (const automation of automations) {
+            let shouldSend = false
+
+            if (automation.trigger_type === 'any') {
+              shouldSend = true
+            } else if (automation.trigger_type === 'keyword' && automation.keywords) {
+              const lowerComment = commentText.toLowerCase()
+              shouldSend = automation.keywords.some(
+                (kw: string) => lowerComment.includes(kw.toLowerCase())
+              )
+            }
+
+            if (!shouldSend) {
+              console.log(`❌ No keyword match for "${commentText}"`)
+              continue
+            }
+
+            console.log(`✅ Match! Queuing DM for @${commenterUsername}`)
+
+            await dmQueue.add('send-dm', {
+              automationId: automation.id,
+              commenterId,
+              commenterUsername,
+              commentId,
+              commentText,
+              igAccountId,
+              igDbAccountId: igAccount.id,
+              tokenExpiresAt: igAccount.token_expires_at,
+              accessTokenEnc: igAccount.access_token_enc,
+              userId: igAccount.user_id,
+              dmMessage: automation.dm_message,
+              replyEnabled: automation.reply_enabled,
+              replyMessages: automation.reply_messages,
+            })
+
+            console.log(`📬 Job added to queue for @${commenterUsername}`)
+          }
         }
+
+        // ── MESSAGES (STOP / deletion) ─────────────────────────
+        if (change.field === 'messages') {
+          const value = change.value
+          const senderId = value?.sender?.id
+          const messageText = value?.message?.text?.toLowerCase() ?? ''
+          const messageId = value?.message?.mid
+
+          // Handle message deletion
+          if (value?.message_delete) {
+            const deletedMid = value.message_delete.mid
+            console.log(`🗑️ Message deletion request for mid: ${deletedMid}`)
+
+            // Find the account that owns this ig account
+            const { data: igAccount } = await supabase
+              .from('instagram_accounts')
+              .select('user_id')
+              .eq('ig_account_id', igAccountId)
+              .single()
+
+            if (igAccount) {
+              // Delete from dm_logs per Meta's platform policy
+              await supabase
+                .from('dm_logs')
+                .delete()
+                .eq('user_id', igAccount.user_id)
+                .eq('commenter_ig_id', senderId)
+
+              console.log(`✅ Deleted message logs for user ${senderId} per deletion request`)
+            }
+            continue
+          }
+
+          // Handle STOP / UNSUBSCRIBE opt-out
+          const stopWords = ['stop', 'unsubscribe', 'optout', 'opt out', 'opt-out', 'cancel']
+          const isStopMessage = stopWords.some(word => messageText.includes(word))
+
+          if (isStopMessage && senderId) {
+            console.log(`🚫 Opt-out request from ${senderId} on account ${igAccountId}`)
+
+            // Add to blocklist
+            await supabase
+              .from('dm_optouts')
+              .upsert({
+                ig_account_id: igAccountId,
+                blocked_commenter_ig_id: senderId,
+              }, { onConflict: 'ig_account_id,blocked_commenter_ig_id' })
+
+            console.log(`✅ User ${senderId} added to opt-out list for account ${igAccountId}`)
+          }
+        }
+
       }
     }
   } catch (err) {

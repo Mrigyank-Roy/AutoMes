@@ -47,7 +47,7 @@ export default function NewAutomationPage() {
   async function handleSubmit() {
     setError('')
     if (!selectedAccountId) return setError('Please select an Instagram account')
-    if (!postUrl.trim() || !postUrl.includes('instagram.com/p/')) return setError('Please enter a valid Instagram post URL')
+    if (!postUrl.trim() || !/instagram\.com\/(p|reel|reels|tv)\//.test(postUrl)) return setError('Please enter a valid Instagram post or reel URL')
     if (triggerType === 'keyword' && keywords.length === 0) return setError('Please add at least one keyword')
     if (!dmMessage.trim()) return setError('Please write a DM message')
     if (dmMessage.length > 1000) return setError('DM message must be under 1000 characters')
