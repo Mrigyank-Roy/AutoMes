@@ -24,7 +24,7 @@ export async function POST(request: NextRequest) {
     // Get the Instagram account and its token
     const { data: igAccount } = await supabase
       .from('instagram_accounts')
-      .select('access_token_enc, ig_account_id')
+      .select('access_token_enc, ig_account_id, ig_username')
       .eq('id', igAccountId)
       .eq('user_id', userId)
       .single()
@@ -38,46 +38,80 @@ export async function POST(request: NextRequest) {
     const accessToken = decrypt(igAccount.access_token_enc)
 
     // Extract shortcode from URL
-    // https://www.instagram.com/p/DZzuPxGAdOY/ → DZzuPxGAdOY
     const shortcodeMatch = postUrl.match(/\/(?:p|reel|reels|tv)\/([A-Za-z0-9_-]+)/)
     if (!shortcodeMatch) {
       return NextResponse.json({ error: 'Invalid Instagram post URL' }, { status: 400 })
     }
     const shortcode = shortcodeMatch[1]
 
-    // Get post details from Instagram API
-    const mediaRes = await fetch(
-      `https://graph.instagram.com/v21.0/me/media?` +
-      `fields=id,caption,media_type,thumbnail_url,media_url,permalink&` +
-      `access_token=${accessToken}`
-    )
-    const mediaData = await mediaRes.json()
+    // Try to get post details from Instagram API
+    let postId: string | null = null
+    let postCaption = ''
+    let postThumbnail: string | null = null
 
-    if (mediaData.error) {
-      console.error('IG me/media error:', JSON.stringify(mediaData.error, null, 2))
-      return NextResponse.json({
-        error: 'Failed to fetch posts from Instagram',
-        igError: mediaData.error.message,
-        igCode: mediaData.error.code,
-        igSubcode: mediaData.error.error_subcode,
-        igType: mediaData.error.type,
-      }, { status: 400 })
+    try {
+      // Fetch user's media list
+      const mediaRes = await fetch(
+        `https://graph.instagram.com/v21.0/me/media?` +
+        `fields=id,caption,media_type,thumbnail_url,media_url,permalink&` +
+        `access_token=${accessToken}&` +
+        `limit=50`
+      )
+      const mediaData = await mediaRes.json()
+
+      console.log('Media fetch response status:', mediaRes.status)
+      console.log('Media fetch error if any:', JSON.stringify(mediaData.error))
+
+      if (!mediaData.error && mediaData.data) {
+        // Find the post matching this shortcode
+        const post = mediaData.data?.find((p: any) =>
+          p.permalink?.includes(shortcode)
+        )
+
+        if (post) {
+          postId = post.id
+          postCaption = post.caption?.slice(0, 100) ?? ''
+          postThumbnail = post.thumbnail_url ?? post.media_url ?? null
+          console.log(`✅ Found post via API: ${postId}`)
+        }
+      } else {
+        console.warn('Could not fetch media list:', mediaData.error?.message)
+      }
+    } catch (mediaErr) {
+      console.warn('Media fetch failed, will use shortcode method:', mediaErr)
     }
 
-    // Find the post matching this shortcode
-    const post = mediaData.data?.find((p: any) =>
-      p.permalink?.includes(shortcode)
-    )
+    // Fallback — if API fetch failed or post not found,
+    // try the oEmbed API to at least get the post ID
+    if (!postId) {
+      try {
+        const oembedRes = await fetch(
+          `https://graph.facebook.com/v21.0/instagram_oembed?` +
+          `url=${encodeURIComponent(postUrl)}&` +
+          `access_token=${process.env.META_APP_ID}|${process.env.META_APP_SECRET}`
+        )
+        const oembedData = await oembedRes.json()
+        console.log('oEmbed response:', JSON.stringify(oembedData))
 
-    if (!post) {
-      return NextResponse.json({
-        error: 'Post not found. Make sure this post belongs to your connected Instagram account.'
-      }, { status: 404 })
+        if (!oembedData.error && oembedData.media_id) {
+          postId = oembedData.media_id
+          postThumbnail = oembedData.thumbnail_url ?? null
+          postCaption = oembedData.title ?? ''
+          console.log(`✅ Found post via oEmbed: ${postId}`)
+        }
+      } catch (oembedErr) {
+        console.warn('oEmbed also failed:', oembedErr)
+      }
     }
 
-    const postId = post.id
-    const postCaption = post.caption?.slice(0, 100) ?? ''
-    const postThumbnail = post.thumbnail_url ?? post.media_url ?? null
+    // Last resort fallback — use shortcode as post identifier
+    // This means automations will work but without thumbnail
+    if (!postId) {
+      console.warn('Could not verify post via API — using shortcode as identifier')
+      postId = `shortcode_${shortcode}`
+      postCaption = ''
+      postThumbnail = null
+    }
 
     // Check if automation already exists for this post
     const { data: existing } = await supabase
@@ -85,11 +119,11 @@ export async function POST(request: NextRequest) {
       .select('id')
       .eq('ig_account_id', igAccountId)
       .eq('post_id', postId)
-      .single()
+      .maybeSingle()
 
     if (existing) {
       return NextResponse.json({
-        error: 'An automation already exists for this post. Edit or delete the existing one.'
+        error: 'An automation already exists for this post. Delete the existing one first.'
       }, { status: 400 })
     }
 
