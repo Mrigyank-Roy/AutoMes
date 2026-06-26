@@ -49,7 +49,6 @@ export async function GET(request: NextRequest) {
       }),
     })
     const tokenData = await tokenRes.json()
-    console.log('Short-lived token response:', tokenData)
 
     // Handle BOTH response shapes: flat, or nested in a `data` array
     const shortLivedToken =
@@ -68,7 +67,6 @@ export async function GET(request: NextRequest) {
         `access_token=${shortLivedToken}`
     )
     const longTokenData = await longTokenRes.json()
-    console.log('Long-lived token response:', longTokenData)
 
     const longLivedToken = longTokenData.access_token
     if (longTokenData.error || !longLivedToken) {
@@ -81,7 +79,6 @@ export async function GET(request: NextRequest) {
       `https://graph.instagram.com/v21.0/me?fields=id,username&access_token=${longLivedToken}`
     )
     const igProfile = await igProfileRes.json()
-    console.log('IG Profile:', igProfile)
 
     if (igProfile.error || !igProfile.id) {
       console.error('IG profile error:', igProfile)
