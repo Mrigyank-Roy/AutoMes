@@ -26,7 +26,7 @@ export async function GET(request: NextRequest) {
     random: Math.random().toString(36).slice(2)
   })).toString('base64')
 
-  const oauthUrl = new URL('https://www.instagram.com/oauth/authorize')
+  const oauthUrl = new URL('https://api.instagram.com/oauth/authorize')
   oauthUrl.searchParams.set('client_id', INSTAGRAM_APP_ID)
   oauthUrl.searchParams.set('redirect_uri', CALLBACK_URL)
   oauthUrl.searchParams.set('scope', SCOPES)
