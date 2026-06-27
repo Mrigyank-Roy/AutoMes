@@ -10,6 +10,25 @@ export async function POST(request: NextRequest) {
   const supabase = createServiceSupabaseClient()
   const now = new Date().toISOString()
 
+  // ── Part 0: Auto-deactivate automations whose time has come ──
+  const { data: autoDeactivate } = await supabase
+    .from('automations')
+    .select('id, user_id')
+    .eq('is_active', true)
+    .lt('deactivates_at', now)
+    .not('deactivates_at', 'is', null)
+
+  if (autoDeactivate && autoDeactivate.length > 0) {
+    for (const auto of autoDeactivate) {
+      await supabase
+        .from('automations')
+        .update({ is_active: false })
+        .eq('id', auto.id)
+      console.log(`⏸ Auto-deactivated automation ${auto.id}`)
+    }
+    console.log(`Auto-deactivated ${autoDeactivate.length} automations`)
+  }
+
   // ── Part 1: Auto-activate pending payments whose start date has arrived ──
   const { data: pendingPayments } = await supabase
     .from('payments')
