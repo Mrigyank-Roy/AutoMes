@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServiceSupabaseClient } from '@/lib/supabase-server'
-import { dmQueue } from '@/lib/queue'
+import { publishDMJob } from '@/lib/qstash'
 
 const VERIFY_TOKEN = process.env.META_WEBHOOK_VERIFY_TOKEN
 
@@ -58,7 +58,7 @@ export async function POST(request: NextRequest) {
             continue
           }
 
-          // Check if commenter has opted out
+          // Check opt-out list
           const { data: isOptedOut } = await supabase
             .from('dm_optouts')
             .select('id')
@@ -101,9 +101,10 @@ export async function POST(request: NextRequest) {
               continue
             }
 
-            console.log(`✅ Match! Queuing DM for @${commenterUsername}`)
+            console.log(`✅ Match! Publishing DM job to QStash for @${commenterUsername}`)
 
-            await dmQueue.add('send-dm', {
+            // Publish to QStash — no more BullMQ
+            await publishDMJob({
               automationId: automation.id,
               commenterId,
               commenterUsername,
@@ -115,27 +116,23 @@ export async function POST(request: NextRequest) {
               accessTokenEnc: igAccount.access_token_enc,
               userId: igAccount.user_id,
               dmMessage: automation.dm_message,
-              replyEnabled: automation.reply_enabled,
-              replyMessages: automation.reply_messages,
+              replyEnabled: automation.reply_enabled ?? false,
+              replyMessages: automation.reply_messages ?? [],
             })
 
-            console.log(`📬 Job added to queue for @${commenterUsername}`)
+            console.log(`📬 DM job published to QStash for @${commenterUsername}`)
           }
         }
 
-        // ── MESSAGES (STOP / deletion) ─────────────────────────
+        // ── MESSAGES (STOP / deletion) ──────────────────────
         if (change.field === 'messages') {
           const value = change.value
           const senderId = value?.sender?.id
           const messageText = value?.message?.text?.toLowerCase() ?? ''
-          const messageId = value?.message?.mid
 
           // Handle message deletion
           if (value?.message_delete) {
-            const deletedMid = value.message_delete.mid
-            console.log(`🗑️ Message deletion request for mid: ${deletedMid}`)
-
-            // Find the account that owns this ig account
+            console.log(`🗑️ Message deletion request`)
             const { data: igAccount } = await supabase
               .from('instagram_accounts')
               .select('user_id')
@@ -143,42 +140,37 @@ export async function POST(request: NextRequest) {
               .single()
 
             if (igAccount) {
-              // Delete from dm_logs per Meta's platform policy
               await supabase
                 .from('dm_logs')
                 .delete()
                 .eq('user_id', igAccount.user_id)
                 .eq('commenter_ig_id', senderId)
-
-              console.log(`✅ Deleted message logs for user ${senderId} per deletion request`)
+              console.log(`✅ Deleted message logs per deletion request`)
             }
             continue
           }
 
-          // Handle STOP / UNSUBSCRIBE opt-out
+          // Handle STOP opt-out
           const stopWords = ['stop', 'unsubscribe', 'optout', 'opt out', 'opt-out', 'cancel']
           const isStopMessage = stopWords.some(word => messageText.includes(word))
 
           if (isStopMessage && senderId) {
-            console.log(`🚫 Opt-out request from ${senderId} on account ${igAccountId}`)
-
-            // Add to blocklist
+            console.log(`🚫 Opt-out from ${senderId}`)
             await supabase
               .from('dm_optouts')
               .upsert({
                 ig_account_id: igAccountId,
                 blocked_commenter_ig_id: senderId,
               }, { onConflict: 'ig_account_id,blocked_commenter_ig_id' })
-
-            console.log(`✅ User ${senderId} added to opt-out list for account ${igAccountId}`)
+            console.log(`✅ User ${senderId} added to opt-out list`)
           }
         }
-
       }
     }
   } catch (err) {
     console.error('Webhook processing error:', err)
   }
 
+  // Always return 200 immediately
   return new NextResponse('OK', { status: 200 })
 }
