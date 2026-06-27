@@ -13,6 +13,7 @@ export async function POST(request: NextRequest) {
       dmMessage,
       replyEnabled,
       replyMessages,
+      autoDeactivateDays,
     } = body
 
     if (!userId || !igAccountId || !postUrl || !dmMessage) {
@@ -142,6 +143,10 @@ export async function POST(request: NextRequest) {
         reply_enabled: replyEnabled,
         reply_messages: replyMessages,
         is_active: true,
+        auto_deactivate_days: body.autoDeactivateDays ?? 7,
+        deactivates_at: body.autoDeactivateDays > 0
+          ? new Date(Date.now() + (body.autoDeactivateDays ?? 7) * 24 * 60 * 60 * 1000).toISOString()
+          : null,
       })
       .select()
       .single()

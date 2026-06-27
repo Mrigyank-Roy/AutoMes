@@ -21,6 +21,7 @@ export default function NewAutomationPage() {
   const [replyEnabled, setReplyEnabled] = useState(false)
   const [replyMessages, setReplyMessages] = useState<string[]>(['Check your DMs! 📩', 'Sent you a DM! 🙌'])
   const [replyInput, setReplyInput] = useState('')
+  const [autoDeactivateDays, setAutoDeactivateDays] = useState(7)
 
   useEffect(() => {
     async function load() {
@@ -55,7 +56,17 @@ export default function NewAutomationPage() {
     const res = await fetch('/api/automations/create', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userId, igAccountId: selectedAccountId, postUrl: postUrl.trim(), triggerType, keywords, dmMessage: dmMessage.trim(), replyEnabled, replyMessages })
+      body: JSON.stringify({ 
+        userId, 
+        igAccountId: selectedAccountId, 
+        postUrl: postUrl.trim(), 
+        triggerType, 
+        keywords, 
+        dmMessage: dmMessage.trim(), 
+        replyEnabled, 
+        replyMessages,
+        autoDeactivateDays
+      })
     })
     const data = await res.json()
     if (!res.ok) { setError(data.error ?? 'Something went wrong'); setSubmitting(false); return }
@@ -122,18 +133,44 @@ export default function NewAutomationPage() {
         {/* Step 3 */}
         <div style={{ background: 'var(--canvas)', borderRadius: 'var(--radius-md)', border: '1px solid var(--hairline)', padding: 24 }}>
           <StepLabel n={3} label="Trigger type" />
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             {[
               { value: 'any', title: 'Any comment', desc: 'Send DM to everyone who comments on this post' },
               { value: 'keyword', title: 'Specific keywords', desc: 'Only send DM when comment contains one of your keywords' },
             ].map(opt => (
-              <label key={opt.value} style={{ display: 'flex', gap: 14, padding: '14px 16px', borderRadius: 'var(--radius-md)', border: `2px solid ${triggerType === opt.value ? 'var(--ink)' : 'var(--hairline)'}`, cursor: 'pointer', background: triggerType === opt.value ? 'var(--surface)' : 'transparent', transition: 'all 0.15s' }}>
-                <input type="radio" name="trigger" value={opt.value} checked={triggerType === opt.value} onChange={() => setTriggerType(opt.value as any)} style={{ marginTop: 2 }} />
+              <label 
+                key={opt.value} 
+                style={{ 
+                  display: 'flex', 
+                  gap: 14, 
+                  padding: '14px 16px', 
+                  borderRadius: 'var(--radius-md)', 
+                  border: `2px solid ${triggerType === opt.value ? 'var(--ink)' : 'var(--hairline)'}`, 
+                  cursor: 'pointer', 
+                  background: triggerType === opt.value ? 'var(--surface)' : 'transparent', 
+                  transition: 'all 0.15s' 
+                }}
+              >
+                {/* Custom radio button design replacement */}
+                <div style={{ width: 18, height: 18, borderRadius: '50%', border: `2px solid ${triggerType === opt.value ? 'var(--ink)' : 'var(--stone)'}`, background: 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 2 }}>
+                  {triggerType === opt.value && <div style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--ink)' }} />}
+                </div>
+
+                {/* Hidden input to maintain functional accessibility */}
+                <input 
+                  type="radio" 
+                  name="trigger" 
+                  value={opt.value} 
+                  checked={triggerType === opt.value} 
+                  onChange={() => setTriggerType(opt.value as any)} 
+                  style={{ display: 'none' }} 
+                />
+
                 <div style={{ flex: 1 }}>
                   <p style={{ fontSize: 14, fontWeight: 700, color: 'var(--ink)' }}>{opt.title}</p>
                   <p style={{ fontSize: 12, color: 'var(--mute)', marginTop: 2 }}>{opt.desc}</p>
                   {opt.value === 'keyword' && triggerType === 'keyword' && (
-                    <div style={{ marginTop: 14 }}>
+                    <div style={{ marginTop: 14 }} onClick={(e) => e.stopPropagation()}>
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
                         {keywords.map(kw => (
                           <span key={kw} style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'var(--ink)', color: '#fff', borderRadius: 'var(--radius-full)', padding: '4px 12px', fontSize: 12, fontWeight: 700 }}>
@@ -165,10 +202,38 @@ export default function NewAutomationPage() {
           </div>
         </div>
 
-        {/* Step 5 — Public reply */}
+        {/* Step 5 — Auto deactivate */}
+        <div style={{ background: 'var(--canvas)', borderRadius: 'var(--radius-md)', border: '1px solid var(--hairline)', padding: 24 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20 }}>
+            <span style={{ width: 28, height: 28, borderRadius: '50%', background: 'var(--ink)', color: '#fff', fontSize: 12, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>5</span>
+            <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--ink)' }}>Auto deactivate</span>
+          </div>
+          <p style={{ fontSize: 13, color: 'var(--mute)', marginBottom: 16, lineHeight: 1.6 }}>
+            Automatically pause this automation after a set number of days. Set to 0 to never auto-deactivate.
+          </p>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14 }}>
+            <input type="number" value={autoDeactivateDays} min={0} max={365}
+              onChange={e => setAutoDeactivateDays(Number(e.target.value))}
+              style={{ width: 80, textAlign: 'center', fontWeight: 700 }} />
+            <span style={{ fontSize: 14, color: 'var(--ink)', fontWeight: 500 }}>days after creation</span>
+            {autoDeactivateDays === 0 && (
+              <span style={{ fontSize: 12, color: '#1a6b3a', background: '#e8f8ed', padding: '4px 12px', borderRadius: 'var(--radius-full)', fontWeight: 600 }}>Never</span>
+            )}
+          </div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {[{ label: '7 days', value: 7 }, { label: '14 days', value: 14 }, { label: '30 days', value: 30 }, { label: '60 days', value: 60 }, { label: 'Never', value: 0 }].map(p => (
+              <button key={p.value} onClick={() => setAutoDeactivateDays(p.value)}
+                style={{ padding: '6px 14px', borderRadius: 'var(--radius-full)', border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 700, background: autoDeactivateDays === p.value ? 'var(--ink)' : 'var(--card)', color: autoDeactivateDays === p.value ? '#fff' : 'var(--mute)', transition: 'all 0.15s' }}>
+                {p.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Step 6 — Public reply */}
         <div style={{ background: 'var(--canvas)', borderRadius: 'var(--radius-md)', border: '1px solid var(--hairline)', padding: 24, opacity: canReply ? 1 : 0.8 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 20 }}>
-            <span style={{ width: 28, height: 28, borderRadius: '50%', background: 'var(--ink)', color: '#fff', fontSize: 12, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>5</span>
+            <span style={{ width: 28, height: 28, borderRadius: '50%', background: 'var(--ink)', color: '#fff', fontSize: 12, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>6</span>
             <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--ink)' }}>Public comment reply</span>
             <span style={{ background: '#fff0f0', color: 'var(--red)', borderRadius: 'var(--radius-full)', padding: '2px 10px', fontSize: 11, fontWeight: 700 }}>Starter+</span>
           </div>
