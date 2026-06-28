@@ -4,10 +4,7 @@ import { createServiceSupabaseClient } from '@/lib/supabase-server'
 import { decrypt } from '@/lib/encryption'
 import { refreshInstagramToken } from '@/lib/refresh-token'
 
-// This handler is called by QStash for each DM job
-// QStash handles retries automatically if this returns non-2xx
 async function handler(request: NextRequest) {
-  // Verify the request is actually from QStash
   const workerSecret = request.headers.get('x-worker-secret')
   if (workerSecret !== process.env.WORKER_SECRET) {
     console.error('Unauthorized worker request')
@@ -26,6 +23,8 @@ async function handler(request: NextRequest) {
     accessTokenEnc: initialTokenEnc,
     userId,
     dmMessage,
+    dmButtonUrl,
+    dmButtonLabel,
     replyEnabled,
     replyMessages,
   } = job
@@ -35,9 +34,7 @@ async function handler(request: NextRequest) {
   const supabase = createServiceSupabaseClient()
 
   try {
-    // Step 1 — Check for duplicate (only block if a DM was ACTUALLY sent before).
-    // We filter on status = 'sent' so a previous FAILED attempt does not
-    // permanently block this commenter and QStash retries can still go through.
+    // Step 1 — Duplicate check (only block if a DM was ACTUALLY sent before)
     const { data: existingLog } = await supabase
       .from('dm_logs')
       .select('id')
@@ -51,7 +48,7 @@ async function handler(request: NextRequest) {
       return NextResponse.json({ skipped: true, reason: 'duplicate' })
     }
 
-    // Step 1b — Check opt-out list
+    // Step 1b — Opt-out check
     const { data: isOptedOut } = await supabase
       .from('dm_optouts')
       .select('id')
@@ -64,7 +61,7 @@ async function handler(request: NextRequest) {
       return NextResponse.json({ skipped: true, reason: 'opted_out' })
     }
 
-    // Step 2 — Check DM limit
+    // Step 2 — DM limit
     const { data: subscription } = await supabase
       .from('subscriptions')
       .select('*')
@@ -114,13 +111,31 @@ async function handler(request: NextRequest) {
     // Step 4 — Decrypt token
     const accessToken = decrypt(accessTokenEnc)
 
-    // Step 5 — Send the DM via PRIVATE REPLY.
-    // We target the comment (recipient.comment_id), NOT the user id.
-    // This is the correct mechanism for comment-to-DM: it works for commenters
-    // who have never messaged you (within 7 days of the comment) and avoids the
-    // "message sent outside of allowed window" error from the plain Send API.
+    // Step 5 — Build the message.
+    // If the automation has a button URL, send a Button Template (text + a
+    // tappable button). Otherwise fall back to plain text.
+    const messageBody = dmButtonUrl
+      ? {
+          attachment: {
+            type: 'template',
+            payload: {
+              template_type: 'button',
+              text: dmMessage,
+              buttons: [
+                {
+                  type: 'web_url',
+                  url: dmButtonUrl,
+                  title: (dmButtonLabel || 'Open link').slice(0, 20), // IG limit: 20 chars
+                },
+              ],
+            },
+          },
+        }
+      : { text: dmMessage }
+
+    // Step 5b — Send via Private Reply (target the comment, not the user)
     const dmRes = await fetch(
-      `https://graph.instagram.com/v21.0/${igAccountId}/messages`,
+      `{{https://graph.instagram.com/v21.0/${igAccountId}}}/messages`,
       {
         method: 'POST',
         headers: {
@@ -129,7 +144,7 @@ async function handler(request: NextRequest) {
         },
         body: JSON.stringify({
           recipient: { comment_id: commentId },
-          message: { text: dmMessage },
+          message: messageBody,
         }),
       }
     )
@@ -151,7 +166,6 @@ async function handler(request: NextRequest) {
 
     if (!success) {
       console.error('DM send failed:', dmResult.error)
-      // Return 500 so QStash retries
       return new NextResponse(
         JSON.stringify({ error: dmResult.error?.message }),
         { status: 500 }
@@ -171,7 +185,7 @@ async function handler(request: NextRequest) {
       const replyText = replyMessages[Math.floor(Math.random() * replyMessages.length)]
 
       const replyRes = await fetch(
-        `https://graph.instagram.com/v21.0/${commentId}/replies`,
+        `{{https://graph.instagram.com/v21.0/${commentId}}}/replies`,
         {
           method: 'POST',
           headers: {
@@ -194,13 +208,11 @@ async function handler(request: NextRequest) {
 
   } catch (err: any) {
     console.error('Worker error:', err)
-    // Return 500 so QStash retries
     return new NextResponse(
       JSON.stringify({ error: err.message }),
       { status: 500 }
     )
   }
 }
-
 
 export const POST = verifySignatureAppRouter(handler)

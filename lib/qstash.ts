@@ -16,10 +16,12 @@ export async function publishDMJob(payload: {
   accessTokenEnc: string
   userId: string
   dmMessage: string
+  dmButtonUrl?: string | null
+  dmButtonLabel?: string | null
   replyEnabled: boolean
   replyMessages: string[]
 }) {
-  const workerUrl = `${process.env.NEXT_PUBLIC_APP_URL}/api/worker/process`
+  const workerUrl = `{{${process.env.NEXT_PUBLIC_APP_URL}}}/api/worker/process`
 
   const response = await qstash.publishJSON({
     url: workerUrl,
