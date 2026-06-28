@@ -23,8 +23,7 @@ async function handler(request: NextRequest) {
     accessTokenEnc: initialTokenEnc,
     userId,
     dmMessage,
-    dmButtonUrl,
-    dmButtonLabel,
+    dmButtons,
     replyEnabled,
     replyMessages,
   } = job
@@ -112,22 +111,24 @@ async function handler(request: NextRequest) {
     const accessToken = decrypt(accessTokenEnc)
 
     // Step 5 — Build the message.
-    // If the automation has a button URL, send a Button Template (text + a
-    // tappable button). Otherwise fall back to plain text.
-    const messageBody = dmButtonUrl
+    // Up to 3 web_url buttons (Meta's max). Falls back to plain text if none.
+    const buttons = (Array.isArray(dmButtons) ? dmButtons : [])
+      .filter((b: any) => b && b.url && b.label)
+      .slice(0, 3)
+      .map((b: any) => ({
+        type: 'web_url',
+        url: String(b.url),
+        title: String(b.label).slice(0, 20), // IG limit: 20 chars
+      }))
+
+    const messageBody = buttons.length > 0
       ? {
           attachment: {
             type: 'template',
             payload: {
               template_type: 'button',
               text: dmMessage,
-              buttons: [
-                {
-                  type: 'web_url',
-                  url: dmButtonUrl,
-                  title: (dmButtonLabel || 'Open link').slice(0, 20), // IG limit: 20 chars
-                },
-              ],
+              buttons,
             },
           },
         }

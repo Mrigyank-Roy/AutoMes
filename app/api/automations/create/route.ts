@@ -11,8 +11,7 @@ export async function POST(request: NextRequest) {
       triggerType,
       keywords,
       dmMessage,
-      dmButtonUrl,
-      dmButtonLabel,
+      dmButtons,
       replyEnabled,
       replyMessages,
       autoDeactivateDays,
@@ -22,12 +21,22 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
     }
 
-    // If a button URL is provided, it must be a valid http(s) URL and have a label
-    if (dmButtonUrl && !/^https?:\/\//i.test(dmButtonUrl)) {
-      return NextResponse.json({ error: 'Button link must start with http:// or https://' }, { status: 400 })
-    }
-    if (dmButtonUrl && !dmButtonLabel) {
-      return NextResponse.json({ error: 'Please add a label for your button' }, { status: 400 })
+    // Validate & clean buttons (max 3, each needs a label + valid http(s) URL)
+    let cleanButtons: { label: string; url: string }[] = []
+    if (Array.isArray(dmButtons)) {
+      cleanButtons = dmButtons
+        .filter((b: any) => b && b.url && b.label)
+        .slice(0, 3)
+        .map((b: any) => ({ label: String(b.label).trim().slice(0, 20), url: String(b.url).trim() }))
+
+      for (const b of cleanButtons) {
+        if (!/^https?:\/\//i.test(b.url)) {
+          return NextResponse.json({ error: 'Each button link must start with http:// or https://' }, { status: 400 })
+        }
+        if (!b.label) {
+          return NextResponse.json({ error: 'Each button needs a label' }, { status: 400 })
+        }
+      }
     }
 
     const supabase = createServiceSupabaseClient()
@@ -61,7 +70,6 @@ export async function POST(request: NextRequest) {
     let postThumbnail: string | null = null
 
     try {
-      // Fetch user's media list
       const mediaRes = await fetch(
         `https://graph.instagram.com/v21.0/me/media?` +
         `fields=id,caption,media_type,thumbnail_url,media_url,permalink&` +
@@ -73,7 +81,6 @@ export async function POST(request: NextRequest) {
       console.log('Media fetch error if any:', JSON.stringify(mediaData.error))
 
       if (!mediaData.error && mediaData.data) {
-        // Find the post matching this shortcode
         const post = mediaData.data?.find((p: any) =>
           p.permalink?.includes(shortcode)
         )
@@ -90,8 +97,6 @@ export async function POST(request: NextRequest) {
       console.warn('Media fetch failed, will use shortcode method:', mediaErr)
     }
 
-    // Fallback — if API fetch failed or post not found,
-    // try the oEmbed API to at least get the post ID
     if (!postId) {
       try {
         const oembedRes = await fetch(
@@ -113,8 +118,6 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Last resort fallback — use shortcode as post identifier
-    // This means automations will work but without thumbnail
     if (!postId) {
       console.warn('Could not verify post via API — using shortcode as identifier')
       postId = `shortcode_${shortcode}`
@@ -148,8 +151,7 @@ export async function POST(request: NextRequest) {
         trigger_type: triggerType,
         keywords: triggerType === 'keyword' ? keywords : null,
         dm_message: dmMessage,
-        dm_button_url: dmButtonUrl?.trim() || null,
-        dm_button_label: dmButtonLabel?.trim() || null,
+        dm_buttons: cleanButtons,
         reply_enabled: replyEnabled,
         reply_messages: replyMessages,
         is_active: true,

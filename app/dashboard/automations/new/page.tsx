@@ -19,8 +19,7 @@ export default function NewAutomationPage() {
   const [keywords, setKeywords] = useState<string[]>([])
   const [keywordInput, setKeywordInput] = useState('')
   const [dmMessage, setDmMessage] = useState('')
-  const [dmButtonUrl, setDmButtonUrl] = useState('')
-  const [dmButtonLabel, setDmButtonLabel] = useState('')
+  const [dmButtons, setDmButtons] = useState<{ label: string; url: string }[]>([])
   const [replyEnabled, setReplyEnabled] = useState(false)
   const [replyMessages, setReplyMessages] = useState<string[]>(['Check your DMs! 📩', 'Sent you a DM! 🙌'])
   const [replyInput, setReplyInput] = useState('')
@@ -48,6 +47,17 @@ export default function NewAutomationPage() {
     setKeywordInput('')
   }
 
+  function addButton() {
+    if (dmButtons.length >= 3) return
+    setDmButtons(prev => [...prev, { label: '', url: '' }])
+  }
+  function updateButton(i: number, field: 'label' | 'url', value: string) {
+    setDmButtons(prev => prev.map((b, j) => j === i ? { ...b, [field]: value } : b))
+  }
+  function removeButton(i: number) {
+    setDmButtons(prev => prev.filter((_, j) => j !== i))
+  }
+
   async function handleSubmit() {
     setError('')
     if (!selectedAccountId) return setError('Please select an Instagram account')
@@ -55,8 +65,13 @@ export default function NewAutomationPage() {
     if (triggerType === 'keyword' && keywords.length === 0) return setError('Please add at least one keyword')
     if (!dmMessage.trim()) return setError('Please write a DM message')
     if (dmMessage.length > 1000) return setError('DM message must be under 1000 characters')
-    if (dmButtonUrl.trim() && !/^https?:\/\//i.test(dmButtonUrl.trim())) return setError('Button link must start with http:// or https://')
-    if (dmButtonUrl.trim() && !dmButtonLabel.trim()) return setError('Please add a label for your button')
+
+    // Validate buttons
+    for (const b of dmButtons) {
+      if (!b.label.trim() || !b.url.trim()) return setError('Every button needs both a label and a link')
+      if (!/^https?:\/\//i.test(b.url.trim())) return setError('Button links must start with http:// or https://')
+    }
+    if (dmButtons.length > 3) return setError('You can add a maximum of 3 buttons')
 
     setSubmitting(true)
     const res = await fetch('/api/automations/create', {
@@ -69,8 +84,7 @@ export default function NewAutomationPage() {
         triggerType,
         keywords,
         dmMessage: dmMessage.trim(),
-        dmButtonUrl: dmButtonUrl.trim(),
-        dmButtonLabel: dmButtonLabel.trim(),
+        dmButtons: dmButtons.map(b => ({ label: b.label.trim().slice(0, 20), url: b.url.trim() })),
         replyEnabled,
         replyMessages,
         autoDeactivateDays
@@ -158,11 +172,9 @@ export default function NewAutomationPage() {
                   transition: 'all 0.15s'
                 } }
               >
-                {/* Custom radio button design replacement */}
                 <div style={ { width: 18, height: 18, borderRadius: '50%', border: `2px solid ${triggerType === opt.value ? 'var(--ink)' : 'var(--stone)'}`, background: 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 2 } }>
                   {triggerType === opt.value && <div style={ { width: 8, height: 8, borderRadius: '50%', background: 'var(--ink)' } } />}
                 </div>
-                {/* Hidden input to maintain functional accessibility */}
                 <input
                   type="radio"
                   name="trigger"
@@ -206,15 +218,33 @@ export default function NewAutomationPage() {
             <p style={ { fontSize: 12, color: dmMessage.length > 900 ? 'var(--red)' : 'var(--ash)', fontWeight: dmMessage.length > 900 ? 700 : 400 } }>{dmMessage.length} / 1000</p>
           </div>
 
-          {/* Optional CTA button */}
+          {/* Optional CTA buttons (up to 3) */}
           <div style={ { marginTop: 20, paddingTop: 20, borderTop: '1px solid var(--hairline)' } }>
-            <p style={ { fontSize: 13, fontWeight: 700, color: 'var(--ink)', marginBottom: 4 } }>Add a button (optional)</p>
-            <p style={ { fontSize: 12, color: 'var(--mute)', marginBottom: 12 } }>Turns your link into a tappable button inside the DM. Leave blank to send plain text.</p>
-            <div style={ { display: 'flex', flexDirection: 'column', gap: 10 } }>
-              <input type="text" value={dmButtonLabel} onChange={e => setDmButtonLabel(e.target.value)} placeholder="Button label (e.g. Open PDF)" maxLength={20} />
-              <input type="url" value={dmButtonUrl} onChange={e => setDmButtonUrl(e.target.value)} placeholder="https://your-link.com" />
+            <div style={ { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 } }>
+              <p style={ { fontSize: 13, fontWeight: 700, color: 'var(--ink)' } }>Buttons (optional)</p>
+              <span style={ { fontSize: 12, color: 'var(--ash)' } }>{dmButtons.length} / 3</span>
             </div>
-            <p style={ { fontSize: 11, color: 'var(--ash)', marginTop: 6 } }>Max 20 characters for the label. One button per DM.</p>
+            <p style={ { fontSize: 12, color: 'var(--mute)', marginBottom: 12 } }>Add up to 3 tappable buttons that open a link inside the DM.</p>
+
+            <div style={ { display: 'flex', flexDirection: 'column', gap: 12 } }>
+              {dmButtons.map((btn, i) => (
+                <div key={i} style={ { display: 'flex', flexDirection: 'column', gap: 8, padding: 12, background: 'var(--surface)', borderRadius: 'var(--radius-md)', border: '1px solid var(--hairline)' } }>
+                  <div style={ { display: 'flex', alignItems: 'center', justifyContent: 'space-between' } }>
+                    <span style={ { fontSize: 12, fontWeight: 700, color: 'var(--mute)' } }>Button {i + 1}</span>
+                    <button onClick={() => removeButton(i)} style={ { background: 'none', border: 'none', color: 'var(--ash)', cursor: 'pointer', fontSize: 18, lineHeight: 1 } }>×</button>
+                  </div>
+                  <input type="text" value={btn.label} onChange={e => updateButton(i, 'label', e.target.value)} placeholder="Button label (e.g. Open PDF)" maxLength={20} />
+                  <input type="url" value={btn.url} onChange={e => updateButton(i, 'url', e.target.value)} placeholder="https://your-link.com" />
+                </div>
+              ))}
+            </div>
+
+            {dmButtons.length < 3 && (
+              <button onClick={addButton} className="btn-secondary" style={ { marginTop: dmButtons.length > 0 ? 12 : 0, padding: '10px 16px', fontSize: 13 } }>
+                + Add button
+              </button>
+            )}
+            <p style={ { fontSize: 11, color: 'var(--ash)', marginTop: 8 } }>Max 3 buttons. Labels are limited to 20 characters.</p>
           </div>
         </div>
 

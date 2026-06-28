@@ -16,8 +16,7 @@ export async function publishDMJob(payload: {
   accessTokenEnc: string
   userId: string
   dmMessage: string
-  dmButtonUrl?: string | null
-  dmButtonLabel?: string | null
+  dmButtons?: { label: string; url: string }[]
   replyEnabled: boolean
   replyMessages: string[]
 }) {
