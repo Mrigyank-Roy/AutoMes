@@ -1,10 +1,10 @@
 import { Client } from '@upstash/qstash'
 
-export const qstash = new Client({
-  token: process.env.QSTASH_TOKEN!,
-})
+const qstash = new Client({ token: process.env.QSTASH_TOKEN! })
 
-export async function publishDMJob(payload: {
+const workerUrl = `${process.env.NEXT_PUBLIC_APP_URL}/api/worker/process`
+
+export type DMJobPayload = {
   automationId: string
   commenterId: string
   commenterUsername: string
@@ -12,24 +12,25 @@ export async function publishDMJob(payload: {
   commentText: string
   igAccountId: string
   igDbAccountId: string
-  tokenExpiresAt: string
+  tokenExpiresAt: string | null
   accessTokenEnc: string
   userId: string
   dmMessage: string
-  dmButtons?: { label: string; url: string }[]
+  dmButtons?: { label: string; url: string; kind?: string }[]
   replyEnabled: boolean
   replyMessages: string[]
-}) {
-  const workerUrl = `${process.env.NEXT_PUBLIC_APP_URL}/api/worker/process`
+}
 
-  const response = await qstash.publishJSON({
+export async function publishDMJob(body: DMJobPayload) {
+  const delaySeconds = Math.floor(Math.random() * 6) + 5
+
+  console.log(`Publishing DM job with ${delaySeconds}s delay for @${body.commenterUsername}`)
+
+  return qstash.publishJSON({
     url: workerUrl,
-    body: payload,
+    body,
     retries: 3,
-    headers: {
-      'x-worker-secret': process.env.WORKER_SECRET!,
-    },
+    delay: delaySeconds,
+    headers: { 'x-worker-secret': process.env.WORKER_SECRET! },
   })
-
-  return response
 }
