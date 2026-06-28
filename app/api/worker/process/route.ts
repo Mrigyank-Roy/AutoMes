@@ -135,7 +135,7 @@ async function handler(request: NextRequest) {
 
     // Step 5b — Send via Private Reply (target the comment, not the user)
     const dmRes = await fetch(
-      `{{https://graph.instagram.com/v21.0/${igAccountId}}}/messages`,
+      `https://graph.instagram.com/v21.0/${igAccountId}/messages`,
       {
         method: 'POST',
         headers: {
@@ -185,7 +185,7 @@ async function handler(request: NextRequest) {
       const replyText = replyMessages[Math.floor(Math.random() * replyMessages.length)]
 
       const replyRes = await fetch(
-        `{{https://graph.instagram.com/v21.0/${commentId}}}/replies`,
+        `https://graph.instagram.com/v21.0/${commentId}/replies`,
         {
           method: 'POST',
           headers: {

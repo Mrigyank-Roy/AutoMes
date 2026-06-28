@@ -21,7 +21,7 @@ export async function publishDMJob(payload: {
   replyEnabled: boolean
   replyMessages: string[]
 }) {
-  const workerUrl = `{{${process.env.NEXT_PUBLIC_APP_URL}}}/api/worker/process`
+  const workerUrl = `${process.env.NEXT_PUBLIC_APP_URL}/api/worker/process`
 
   const response = await qstash.publishJSON({
     url: workerUrl,
