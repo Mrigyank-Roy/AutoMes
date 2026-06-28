@@ -15,7 +15,6 @@ async function handler(request: NextRequest) {
   }
 
   const job = await request.json()
-
   const {
     automationId,
     commenterId,
@@ -36,12 +35,15 @@ async function handler(request: NextRequest) {
   const supabase = createServiceSupabaseClient()
 
   try {
-    // Step 1 — Check for duplicate (already sent DM to this person for this automation)
+    // Step 1 — Check for duplicate (only block if a DM was ACTUALLY sent before).
+    // We filter on status = 'sent' so a previous FAILED attempt does not
+    // permanently block this commenter and QStash retries can still go through.
     const { data: existingLog } = await supabase
       .from('dm_logs')
       .select('id')
       .eq('automation_id', automationId)
       .eq('commenter_ig_id', commenterId)
+      .eq('status', 'sent')
       .maybeSingle()
 
     if (existingLog) {
@@ -112,7 +114,11 @@ async function handler(request: NextRequest) {
     // Step 4 — Decrypt token
     const accessToken = decrypt(accessTokenEnc)
 
-    // Step 5 — Send the DM
+    // Step 5 — Send the DM via PRIVATE REPLY.
+    // We target the comment (recipient.comment_id), NOT the user id.
+    // This is the correct mechanism for comment-to-DM: it works for commenters
+    // who have never messaged you (within 7 days of the comment) and avoids the
+    // "message sent outside of allowed window" error from the plain Send API.
     const dmRes = await fetch(
       `https://graph.instagram.com/v21.0/${igAccountId}/messages`,
       {
@@ -122,7 +128,7 @@ async function handler(request: NextRequest) {
           'Authorization': `Bearer ${accessToken}`,
         },
         body: JSON.stringify({
-          recipient: { id: commenterId },
+          recipient: { comment_id: commentId },
           message: { text: dmMessage },
         }),
       }
@@ -196,5 +202,5 @@ async function handler(request: NextRequest) {
   }
 }
 
-// Wrap with QStash signature verification
+
 export const POST = verifySignatureAppRouter(handler)
