@@ -49,12 +49,28 @@ export async function POST(request: NextRequest) {
           // Find the instagram_account in our DB
           const { data: igAccount } = await supabase
             .from('instagram_accounts')
-            .select('id, user_id, access_token_enc, token_expires_at')
+            .select('id, user_id, access_token_enc, token_expires_at, ig_username')
             .eq('ig_account_id', igAccountId)
             .single()
 
           if (!igAccount) {
             console.log(`No account found for ig_account_id: ${igAccountId}`)
+            continue
+          }
+
+          // ⛔ Ignore comments made by the account owner itself.
+          // When we post a public reply ("Check your DMs!"), that reply is a
+          // comment authored by the connected account, which fires another
+          // webhook. Without this guard the automation would reply to its own
+          // reply forever (self-reply loop) and DM the account to itself.
+          const isOwnComment =
+            commenterId === igAccountId ||
+            (!!commenterUsername &&
+              !!igAccount.ig_username &&
+              commenterUsername.toLowerCase() === igAccount.ig_username.toLowerCase())
+
+          if (isOwnComment) {
+            console.log(`🔁 Skipping own comment by @${commenterUsername} — prevents reply loop`)
             continue
           }
 
