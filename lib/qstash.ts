@@ -24,13 +24,19 @@ export type DMJobPayload = {
 export async function publishDMJob(body: DMJobPayload) {
   const delaySeconds = Math.floor(Math.random() * 6) + 5
 
-  console.log(`Publishing DM job with ${delaySeconds}s delay for @${body.commenterUsername}`)
-
-  return qstash.publishJSON({
+  await qstash.publishJSON({
     url: workerUrl,
     body,
-    retries: 3,
     delay: delaySeconds,
+    retries: 2,
+    flowControl: {
+      key: `ig-${body.igAccountId}`,
+      rate: 180,
+      period: '1h',
+      parallelism: 10,
+    },
     headers: { 'x-worker-secret': process.env.WORKER_SECRET! },
   })
+
+  return { delaySeconds }
 }
