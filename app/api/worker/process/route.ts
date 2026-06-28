@@ -183,7 +183,8 @@ async function handler(request: NextRequest) {
 
     // Step 8 — Public comment reply (paid plans only)
     if (replyEnabled && subscription.allows_comment_reply && replyMessages?.length > 0) {
-      const replyText = replyMessages[Math.floor(Math.random() * replyMessages.length)]
+      const rawReply = replyMessages[Math.floor(Math.random() * replyMessages.length)]
+      const replyText = rawReply.replace(/@username/gi, `@${commenterUsername}`)
 
       const replyRes = await fetch(
         `https://graph.instagram.com/v21.0/${commentId}/replies`,
