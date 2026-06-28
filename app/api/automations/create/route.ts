@@ -11,6 +11,8 @@ export async function POST(request: NextRequest) {
       triggerType,
       keywords,
       dmMessage,
+      dmButtonUrl,
+      dmButtonLabel,
       replyEnabled,
       replyMessages,
       autoDeactivateDays,
@@ -18,6 +20,14 @@ export async function POST(request: NextRequest) {
 
     if (!userId || !igAccountId || !postUrl || !dmMessage) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
+    }
+
+    // If a button URL is provided, it must be a valid http(s) URL and have a label
+    if (dmButtonUrl && !/^https?:\/\//i.test(dmButtonUrl)) {
+      return NextResponse.json({ error: 'Button link must start with http:// or https://' }, { status: 400 })
+    }
+    if (dmButtonUrl && !dmButtonLabel) {
+      return NextResponse.json({ error: 'Please add a label for your button' }, { status: 400 })
     }
 
     const supabase = createServiceSupabaseClient()
@@ -59,7 +69,6 @@ export async function POST(request: NextRequest) {
         `limit=50`
       )
       const mediaData = await mediaRes.json()
-
       console.log('Media fetch response status:', mediaRes.status)
       console.log('Media fetch error if any:', JSON.stringify(mediaData.error))
 
@@ -68,7 +77,6 @@ export async function POST(request: NextRequest) {
         const post = mediaData.data?.find((p: any) =>
           p.permalink?.includes(shortcode)
         )
-
         if (post) {
           postId = post.id
           postCaption = post.caption?.slice(0, 100) ?? ''
@@ -140,6 +148,8 @@ export async function POST(request: NextRequest) {
         trigger_type: triggerType,
         keywords: triggerType === 'keyword' ? keywords : null,
         dm_message: dmMessage,
+        dm_button_url: dmButtonUrl?.trim() || null,
+        dm_button_label: dmButtonLabel?.trim() || null,
         reply_enabled: replyEnabled,
         reply_messages: replyMessages,
         is_active: true,
@@ -156,7 +166,6 @@ export async function POST(request: NextRequest) {
     }
 
     return NextResponse.json({ success: true, automation })
-
   } catch (err) {
     console.error('Create automation error:', err)
     return NextResponse.json({ error: 'Something went wrong' }, { status: 500 })

@@ -58,11 +58,8 @@ export async function POST(request: NextRequest) {
             continue
           }
 
-          // ⛔ Ignore comments made by the account owner itself.
-          // When we post a public reply ("Check your DMs!"), that reply is a
-          // comment authored by the connected account, which fires another
-          // webhook. Without this guard the automation would reply to its own
-          // reply forever (self-reply loop) and DM the account to itself.
+          // ⛔ Ignore comments made by the account owner itself (prevents the
+          // self-reply loop: our own "Check your DMs!" reply is a comment too).
           const isOwnComment =
             commenterId === igAccountId ||
             (!!commenterUsername &&
@@ -119,7 +116,6 @@ export async function POST(request: NextRequest) {
 
             console.log(`✅ Match! Publishing DM job to QStash for @${commenterUsername}`)
 
-            // Publish to QStash — no more BullMQ
             await publishDMJob({
               automationId: automation.id,
               commenterId,
@@ -132,6 +128,8 @@ export async function POST(request: NextRequest) {
               accessTokenEnc: igAccount.access_token_enc,
               userId: igAccount.user_id,
               dmMessage: automation.dm_message,
+              dmButtonUrl: automation.dm_button_url ?? null,
+              dmButtonLabel: automation.dm_button_label ?? null,
               replyEnabled: automation.reply_enabled ?? false,
               replyMessages: automation.reply_messages ?? [],
             })
@@ -146,7 +144,6 @@ export async function POST(request: NextRequest) {
           const senderId = value?.sender?.id
           const messageText = value?.message?.text?.toLowerCase() ?? ''
 
-          // Handle message deletion
           if (value?.message_delete) {
             console.log(`🗑️ Message deletion request`)
             const { data: igAccount } = await supabase
@@ -166,7 +163,6 @@ export async function POST(request: NextRequest) {
             continue
           }
 
-          // Handle STOP opt-out
           const stopWords = ['stop', 'unsubscribe', 'optout', 'opt out', 'opt-out', 'cancel']
           const isStopMessage = stopWords.some(word => messageText.includes(word))
 
@@ -187,6 +183,5 @@ export async function POST(request: NextRequest) {
     console.error('Webhook processing error:', err)
   }
 
-  // Always return 200 immediately
   return new NextResponse('OK', { status: 200 })
 }
