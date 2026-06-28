@@ -318,11 +318,16 @@ export default function EditAutomationPage() {
                     <div style={ { display: 'flex', gap: 8 } }>
                       <input type="text" value={replyInput} onChange={e => setReplyInput(e.target.value)}
                         onKeyDown={e => e.key === 'Enter' && (replyInput.trim() && setReplyMessages(p => [...p, replyInput.trim()]), setReplyInput(''))}
-                        placeholder="Add another reply variation..." />
+                        placeholder="e.g. Check your DMs @username 📩" style={ { flex: 1 } } />
+                      <button type="button" onClick={() => setReplyInput(prev => (prev + ' @username').trimStart())}
+                        style={ { padding: '10px 14px', borderRadius: 'var(--radius-md)', background: 'var(--card)', border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 700, color: 'var(--ink)', whiteSpace: 'nowrap' } }>@ mention</button>
                       <button onClick={() => { if (replyInput.trim()) { setReplyMessages(p => [...p, replyInput.trim()]); setReplyInput('') } }}
                         style={ { padding: '10px 16px', borderRadius: 'var(--radius-md)', background: 'var(--secondary-bg)', border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 700, color: 'var(--ink)' } }>Add</button>
                     </div>
                   )}
+                  <p style={ { fontSize: 11, color: 'var(--ash)', marginTop: 8 } }>
+                    Tip: type <strong>@username</strong> anywhere and it becomes the commenter's handle (e.g. @instagram_user) automatically.
+                  </p>
                 </div>
               )}
             </div>
