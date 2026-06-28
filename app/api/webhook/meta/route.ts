@@ -128,8 +128,7 @@ export async function POST(request: NextRequest) {
               accessTokenEnc: igAccount.access_token_enc,
               userId: igAccount.user_id,
               dmMessage: automation.dm_message,
-              dmButtonUrl: automation.dm_button_url ?? null,
-              dmButtonLabel: automation.dm_button_label ?? null,
+              dmButtons: automation.dm_buttons ?? [],
               replyEnabled: automation.reply_enabled ?? false,
               replyMessages: automation.reply_messages ?? [],
             })

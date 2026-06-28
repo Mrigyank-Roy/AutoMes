@@ -10,6 +10,7 @@ export async function POST(request: NextRequest) {
       triggerType,
       keywords,
       dmMessage,
+      dmButtons,
       replyEnabled,
       replyMessages,
       autoDeactivateDays,
@@ -17,6 +18,24 @@ export async function POST(request: NextRequest) {
 
     if (!automationId || !userId || !dmMessage) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
+    }
+
+    // Validate & clean buttons (max 3, each needs a label + valid http(s) URL)
+    let cleanButtons: { label: string; url: string }[] = []
+    if (Array.isArray(dmButtons)) {
+      cleanButtons = dmButtons
+        .filter((b: any) => b && b.url && b.label)
+        .slice(0, 3)
+        .map((b: any) => ({ label: String(b.label).trim().slice(0, 20), url: String(b.url).trim() }))
+
+      for (const b of cleanButtons) {
+        if (!/^https?:\/\//i.test(b.url)) {
+          return NextResponse.json({ error: 'Each button link must start with http:// or https://' }, { status: 400 })
+        }
+        if (!b.label) {
+          return NextResponse.json({ error: 'Each button needs a label' }, { status: 400 })
+        }
+      }
     }
 
     const supabase = createServiceSupabaseClient()
@@ -48,6 +67,7 @@ export async function POST(request: NextRequest) {
         trigger_type: triggerType,
         keywords: triggerType === 'keyword' ? keywords : null,
         dm_message: dmMessage,
+        dm_buttons: cleanButtons,
         reply_enabled: replyEnabled,
         reply_messages: replyMessages,
         auto_deactivate_days: autoDeactivateDays,
@@ -63,7 +83,6 @@ export async function POST(request: NextRequest) {
     }
 
     return NextResponse.json({ success: true, automation: updated })
-
   } catch (err) {
     console.error('Update automation error:', err)
     return NextResponse.json({ error: 'Something went wrong' }, { status: 500 })
