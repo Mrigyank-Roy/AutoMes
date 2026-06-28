@@ -20,6 +20,8 @@ export default function NewAutomationPage() {
   const [keywordInput, setKeywordInput] = useState('')
   const [dmMessage, setDmMessage] = useState('')
   const [dmButtons, setDmButtons] = useState<{ label: string; url: string }[]>([])
+  const [followEnabled, setFollowEnabled] = useState(false)
+  const [followLabel, setFollowLabel] = useState('Follow me 👋')
   const [replyEnabled, setReplyEnabled] = useState(false)
   const [replyMessages, setReplyMessages] = useState<string[]>(['Check your DMs! 📩', 'Sent you a DM! 🙌'])
   const [replyInput, setReplyInput] = useState('')
@@ -40,6 +42,11 @@ export default function NewAutomationPage() {
     load()
   }, [router])
 
+  const selectedAccount = igAccounts.find(a => a.id === selectedAccountId)
+  const profileUsername = selectedAccount?.ig_username ?? ''
+  const profileUrl = profileUsername ? `https://instagram.com/${profileUsername}` : ''
+  const totalButtons = dmButtons.length + (followEnabled ? 1 : 0)
+
   function addKeyword() {
     const kw = keywordInput.trim()
     if (!kw || keywords.includes(kw)) return
@@ -48,7 +55,7 @@ export default function NewAutomationPage() {
   }
 
   function addButton() {
-    if (dmButtons.length >= 3) return
+    if (dmButtons.length + (followEnabled ? 1 : 0) >= 3) return
     setDmButtons(prev => [...prev, { label: '', url: '' }])
   }
   function updateButton(i: number, field: 'label' | 'url', value: string) {
@@ -66,12 +73,19 @@ export default function NewAutomationPage() {
     if (!dmMessage.trim()) return setError('Please write a DM message')
     if (dmMessage.length > 1000) return setError('DM message must be under 1000 characters')
 
-    // Validate buttons
+    // Validate manual buttons
     for (const b of dmButtons) {
       if (!b.label.trim() || !b.url.trim()) return setError('Every button needs both a label and a link')
       if (!/^https?:\/\//i.test(b.url.trim())) return setError('Button links must start with http:// or https://')
     }
-    if (dmButtons.length > 3) return setError('You can add a maximum of 3 buttons')
+    if (followEnabled && !profileUrl) return setError('Could not find your Instagram profile link — try reconnecting your account')
+    if (totalButtons > 3) return setError('You can add a maximum of 3 buttons')
+
+    // Build final buttons (follow button always last)
+    const allButtons: any[] = dmButtons.map(b => ({ label: b.label.trim().slice(0, 20), url: b.url.trim() }))
+    if (followEnabled && profileUrl) {
+      allButtons.push({ label: (followLabel.trim() || 'Follow me 👋').slice(0, 20), url: profileUrl, kind: 'follow' })
+    }
 
     setSubmitting(true)
     const res = await fetch('/api/automations/create', {
@@ -84,7 +98,7 @@ export default function NewAutomationPage() {
         triggerType,
         keywords,
         dmMessage: dmMessage.trim(),
-        dmButtons: dmButtons.map(b => ({ label: b.label.trim().slice(0, 20), url: b.url.trim() })),
+        dmButtons: allButtons,
         replyEnabled,
         replyMessages,
         autoDeactivateDays
@@ -222,7 +236,7 @@ export default function NewAutomationPage() {
           <div style={ { marginTop: 20, paddingTop: 20, borderTop: '1px solid var(--hairline)' } }>
             <div style={ { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 } }>
               <p style={ { fontSize: 13, fontWeight: 700, color: 'var(--ink)' } }>Buttons (optional)</p>
-              <span style={ { fontSize: 12, color: 'var(--ash)' } }>{dmButtons.length} / 3</span>
+              <span style={ { fontSize: 12, color: 'var(--ash)' } }>{totalButtons} / 3</span>
             </div>
             <p style={ { fontSize: 12, color: 'var(--mute)', marginBottom: 12 } }>Add up to 3 tappable buttons that open a link inside the DM.</p>
 
@@ -239,12 +253,37 @@ export default function NewAutomationPage() {
               ))}
             </div>
 
-            {dmButtons.length < 3 && (
+            {totalButtons < 3 && (
               <button onClick={addButton} className="btn-secondary" style={ { marginTop: dmButtons.length > 0 ? 12 : 0, padding: '10px 16px', fontSize: 13 } }>
                 + Add button
               </button>
             )}
             <p style={ { fontSize: 11, color: 'var(--ash)', marginTop: 8 } }>Max 3 buttons. Labels are limited to 20 characters.</p>
+
+            {/* Follow me button toggle */}
+            <div style={ { marginTop: 16, paddingTop: 16, borderTop: '1px dashed var(--hairline)' } }>
+              <div style={ { display: 'flex', alignItems: 'center', justifyContent: 'space-between' } }>
+                <div style={ { paddingRight: 12 } }>
+                  <p style={ { fontSize: 13, fontWeight: 700, color: 'var(--ink)' } }>Add a "Follow me" button</p>
+                  <p style={ { fontSize: 12, color: 'var(--mute)', marginTop: 2 } }>Auto-adds a button linking to @{profileUsername || 'your profile'} — always shown last.</p>
+                </div>
+                <button type="button" disabled={!followEnabled && dmButtons.length >= 3}
+                  onClick={() => setFollowEnabled(v => !v)}
+                  style={ { width: 44, height: 24, borderRadius: 'var(--radius-full)', background: followEnabled ? 'var(--ink)' : 'var(--stone)', border: 'none', cursor: (!followEnabled && dmButtons.length >= 3) ? 'not-allowed' : 'pointer', position: 'relative', transition: 'background 0.2s', flexShrink: 0, opacity: (!followEnabled && dmButtons.length >= 3) ? 0.5 : 1 } }>
+                  <span style={ { position: 'absolute', top: 3, left: followEnabled ? 22 : 3, width: 18, height: 18, borderRadius: '50%', background: '#fff', transition: 'left 0.2s' } } />
+                </button>
+              </div>
+              {!followEnabled && dmButtons.length >= 3 && (
+                <p style={ { fontSize: 11, color: 'var(--red)', marginTop: 8 } }>You already have 3 buttons. Remove one to add a Follow button.</p>
+              )}
+              {followEnabled && (
+                <div style={ { marginTop: 12 } }>
+                  <label style={ { fontSize: 12, fontWeight: 600, color: 'var(--mute)', display: 'block', marginBottom: 6 } }>Button label</label>
+                  <input type="text" value={followLabel} onChange={e => setFollowLabel(e.target.value)} placeholder="Follow me 👋" maxLength={20} />
+                  <p style={ { fontSize: 11, color: 'var(--ash)', marginTop: 6 } }>Links to your profile automatically. Max 20 characters.</p>
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
@@ -321,7 +360,7 @@ export default function NewAutomationPage() {
                     </div>
                   )}
                   <p style={ { fontSize: 11, color: 'var(--ash)', marginTop: 8 } }>
-                    Tip: type <strong>@username</strong> anywhere and it becomes the commenter's handle (e.g. @instagram_user) automatically.
+                    Tip: type <strong>@username</strong> anywhere and it becomes the commenter's handle (e.g. @shivam_united) automatically.
                   </p>
                 </div>
               )}

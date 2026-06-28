@@ -21,13 +21,16 @@ export async function POST(request: NextRequest) {
     }
 
     // Validate & clean buttons (max 3, each needs a label + valid http(s) URL)
-    let cleanButtons: { label: string; url: string }[] = []
+    let cleanButtons: Array<{ label: string; url: string; kind?: string }> = []
     if (Array.isArray(dmButtons)) {
       cleanButtons = dmButtons
         .filter((b: any) => b && b.url && b.label)
         .slice(0, 3)
-        .map((b: any) => ({ label: String(b.label).trim().slice(0, 20), url: String(b.url).trim() }))
-
+        .map((b: any) => ({
+          label: String(b.label).trim().slice(0, 20),
+          url: String(b.url).trim(),
+          ...(b.kind === 'follow' ? { kind: 'follow' } : {}),
+        }))
       for (const b of cleanButtons) {
         if (!/^https?:\/\//i.test(b.url)) {
           return NextResponse.json({ error: 'Each button link must start with http:// or https://' }, { status: 400 })
