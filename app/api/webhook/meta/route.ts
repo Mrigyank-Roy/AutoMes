@@ -28,12 +28,11 @@ export async function POST(request: NextRequest) {
     const entries = body.entry ?? []
 
     for (const entry of entries) {
-      const changes = entry.changes ?? []
       const igAccountId = entry.id
 
+      // ── COMMENTS (entry.changes) ──────────────────────────────
+      const changes = entry.changes ?? []
       for (const change of changes) {
-
-        // ── COMMENTS ──────────────────────────────────────────
         if (change.field === 'comments') {
           const value = change.value
           const postId = value?.media?.id
@@ -41,9 +40,7 @@ export async function POST(request: NextRequest) {
           const commenterId = value?.from?.id
           const commenterUsername = value?.from?.username
           const commentId = value?.id
-
           if (!postId || !commenterId) continue
-
           console.log(`💬 Comment on post ${postId}: "${commentText}" by @${commenterUsername}`)
 
           // Find the instagram_account in our DB
@@ -52,7 +49,6 @@ export async function POST(request: NextRequest) {
             .select('id, user_id, access_token_enc, token_expires_at, ig_username')
             .eq('ig_account_id', igAccountId)
             .single()
-
           if (!igAccount) {
             console.log(`No account found for ig_account_id: ${igAccountId}`)
             continue
@@ -65,7 +61,6 @@ export async function POST(request: NextRequest) {
             (!!commenterUsername &&
               !!igAccount.ig_username &&
               commenterUsername.toLowerCase() === igAccount.ig_username.toLowerCase())
-
           if (isOwnComment) {
             console.log(`🔁 Skipping own comment by @${commenterUsername} — prevents reply loop`)
             continue
@@ -78,7 +73,6 @@ export async function POST(request: NextRequest) {
             .eq('ig_account_id', igAccountId)
             .eq('blocked_commenter_ig_id', commenterId)
             .maybeSingle()
-
           if (isOptedOut) {
             console.log(`User ${commenterId} has opted out — skipping`)
             continue
@@ -91,7 +85,6 @@ export async function POST(request: NextRequest) {
             .eq('ig_account_id', igAccount.id)
             .eq('post_id', postId)
             .eq('is_active', true)
-
           if (!automations || automations.length === 0) {
             console.log(`No active automations for post ${postId}`)
             continue
@@ -99,7 +92,6 @@ export async function POST(request: NextRequest) {
 
           for (const automation of automations) {
             let shouldSend = false
-
             if (automation.trigger_type === 'any') {
               shouldSend = true
             } else if (automation.trigger_type === 'keyword' && automation.keywords) {
@@ -108,14 +100,11 @@ export async function POST(request: NextRequest) {
                 (kw: string) => lowerComment.includes(kw.toLowerCase())
               )
             }
-
             if (!shouldSend) {
               console.log(`❌ No keyword match for "${commentText}"`)
               continue
             }
-
             console.log(`✅ Match! Publishing DM job to QStash for @${commenterUsername}`)
-
             await publishDMJob({
               automationId: automation.id,
               commenterId,
@@ -132,49 +121,54 @@ export async function POST(request: NextRequest) {
               replyEnabled: automation.reply_enabled ?? false,
               replyMessages: automation.reply_messages ?? [],
             })
-
             console.log(`📬 DM job published to QStash for @${commenterUsername}`)
           }
         }
+      }
 
-        // ── MESSAGES (STOP / deletion) ──────────────────────
-        if (change.field === 'messages') {
-          const value = change.value
-          const senderId = value?.sender?.id
-          const messageText = value?.message?.text?.toLowerCase() ?? ''
+      // ── DIRECT MESSAGES (entry.messaging) — STOP / opt-out / deletion ──
+      // Instagram delivers DMs here, NOT under entry.changes.
+      const messagingEvents = entry.messaging ?? []
+      for (const event of messagingEvents) {
+        const senderId = event?.sender?.id
 
-          if (value?.message_delete) {
-            console.log(`🗑️ Message deletion request`)
-            const { data: igAccount } = await supabase
-              .from('instagram_accounts')
-              .select('user_id')
-              .eq('ig_account_id', igAccountId)
-              .single()
+        // Skip our own outgoing messages (echoes) and events with no sender
+        if (event?.message?.is_echo) continue
+        if (!senderId) continue
 
-            if (igAccount) {
-              await supabase
-                .from('dm_logs')
-                .delete()
-                .eq('user_id', igAccount.user_id)
-                .eq('commenter_ig_id', senderId)
-              console.log(`✅ Deleted message logs per deletion request`)
-            }
-            continue
-          }
-
-          const stopWords = ['stop', 'unsubscribe', 'optout', 'opt out', 'opt-out', 'cancel']
-          const isStopMessage = stopWords.some(word => messageText.includes(word))
-
-          if (isStopMessage && senderId) {
-            console.log(`🚫 Opt-out from ${senderId}`)
+        // Message unsend / deletion → wipe that user's logs
+        if (event?.message?.is_deleted) {
+          console.log(`🗑️ Message deletion from ${senderId}`)
+          const { data: igAccount } = await supabase
+            .from('instagram_accounts')
+            .select('user_id')
+            .eq('ig_account_id', igAccountId)
+            .single()
+          if (igAccount) {
             await supabase
-              .from('dm_optouts')
-              .upsert({
-                ig_account_id: igAccountId,
-                blocked_commenter_ig_id: senderId,
-              }, { onConflict: 'ig_account_id,blocked_commenter_ig_id' })
-            console.log(`✅ User ${senderId} added to opt-out list`)
+              .from('dm_logs')
+              .delete()
+              .eq('user_id', igAccount.user_id)
+              .eq('commenter_ig_id', senderId)
+            console.log(`✅ Deleted message logs per deletion request`)
           }
+          continue
+        }
+
+        const messageText = event?.message?.text?.toLowerCase() ?? ''
+        if (!messageText) continue // skip reads, deliveries, reactions, etc.
+
+        const stopWords = ['stop', 'unsubscribe', 'optout', 'opt out', 'opt-out', 'cancel']
+        const isStopMessage = stopWords.some(word => messageText.includes(word))
+        if (isStopMessage) {
+          console.log(`🚫 Opt-out from ${senderId}`)
+          await supabase
+            .from('dm_optouts')
+            .upsert({
+              ig_account_id: igAccountId,
+              blocked_commenter_ig_id: senderId,
+            }, { onConflict: 'ig_account_id,blocked_commenter_ig_id' })
+          console.log(`✅ User ${senderId} added to opt-out list`)
         }
       }
     }
