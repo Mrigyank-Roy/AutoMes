@@ -1,18 +1,28 @@
 import Link from 'next/link'
+import { LogoLockup } from '@/components/Logo'
+
+export const metadata = {
+  title: 'Terms of Service',
+}
 
 export default function TermsPage() {
   return (
-    <div style={{ minHeight: '100vh', background: 'var(--surface)' }}>
-      <nav style={{ background: 'var(--canvas)', borderBottom: '1px solid var(--hairline)', padding: '0 24px', height: 64, display: 'flex', alignItems: 'center', justifyContent: 'space-between', maxWidth: 1100, margin: '0 auto' }}>
-        <Link href="/" style={{ fontSize: 20, fontWeight: 800, color: 'var(--red)', textDecoration: 'none' }}>AutoMes</Link>
-        <Link href="/dashboard" style={{ fontSize: 13, fontWeight: 600, color: 'var(--mute)', textDecoration: 'none', padding: '8px 16px', background: 'var(--card)', borderRadius: 'var(--radius-md)' }}>Dashboard</Link>
+    <div style={ { minHeight: '100vh', background: 'var(--surface)' } }>
+      {/* Full-width top bar */}
+      <nav style={ { background: 'var(--canvas)', borderBottom: '1px solid var(--hairline)' } }>
+        <div style={ { maxWidth: 1100, margin: '0 auto', padding: '0 24px', height: 64, display: 'flex', alignItems: 'center', justifyContent: 'space-between' } }>
+          <Link href="/" aria-label="AutoMes home" style={ { display: 'inline-block', color: 'var(--ink)', lineHeight: 0 } }>
+            <LogoLockup height={40} />
+          </Link>
+          <Link href="/dashboard" style={ { fontSize: 13, fontWeight: 600, color: 'var(--mute)', textDecoration: 'none', padding: '8px 16px', background: 'var(--card)', borderRadius: 'var(--radius-md)' } }>Dashboard</Link>
+        </div>
       </nav>
 
-      <div style={{ maxWidth: 720, margin: '0 auto', padding: '60px 24px' }}>
-        <div style={{ marginBottom: 48 }}>
-          <p style={{ fontSize: 12, fontWeight: 700, color: 'var(--red)', textTransform: 'uppercase', letterSpacing: 2, marginBottom: 12 }}>Legal</p>
-          <h1 style={{ fontSize: 40, fontWeight: 800, color: 'var(--ink)', letterSpacing: -1, marginBottom: 8 }}>Terms of Service</h1>
-          <p style={{ fontSize: 13, color: 'var(--ash)' }}>Last updated: June 23, 2026</p>
+      <div style={ { maxWidth: 720, margin: '0 auto', padding: '60px 24px' } }>
+        <div style={ { marginBottom: 48 } }>
+          <p style={ { fontSize: 12, fontWeight: 700, color: 'var(--red)', textTransform: 'uppercase', letterSpacing: 2, marginBottom: 12 } }>Legal</p>
+          <h1 style={ { fontSize: 40, fontWeight: 800, color: 'var(--ink)', letterSpacing: -1, marginBottom: 8 } }>Terms of Service</h1>
+          <p style={ { fontSize: 13, color: 'var(--ash)' } }>Last updated: June 23, 2026</p>
         </div>
 
         {[
@@ -29,9 +39,9 @@ export default function TermsPage() {
           { title: '11. Governing law', content: 'These terms are governed by the laws of India. Disputes shall be subject to the exclusive jurisdiction of courts in India.' },
           { title: '12. Contact', content: 'For questions about these terms: support@auto-mes.vercel.app' },
         ].map(section => (
-          <div key={section.title} style={{ marginBottom: 32, paddingBottom: 32, borderBottom: '1px solid var(--hairline)' }}>
-            <h2 style={{ fontSize: 16, fontWeight: 700, color: 'var(--ink)', marginBottom: 12 }}>{section.title}</h2>
-            <p style={{ fontSize: 14, color: 'var(--body)', lineHeight: 1.8 }}>{section.content}</p>
+          <div key={section.title} style={ { marginBottom: 32, paddingBottom: 32, borderBottom: '1px solid var(--hairline)' } }>
+            <h2 style={ { fontSize: 16, fontWeight: 700, color: 'var(--ink)', marginBottom: 12 } }>{section.title}</h2>
+            <p style={ { fontSize: 14, color: 'var(--body)', lineHeight: 1.8 } }>{section.content}</p>
           </div>
         ))}
       </div>
