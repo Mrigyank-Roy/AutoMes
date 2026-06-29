@@ -1,32 +1,61 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServiceSupabaseClient } from '@/lib/supabase-server'
 import { publishDMJob } from '@/lib/qstash'
+import { decrypt } from '@/lib/encryption'
 
 const VERIFY_TOKEN = process.env.META_WEBHOOK_VERIFY_TOKEN
+
+// Send a standard DM reply (used for opt-out / re-opt-in confirmations).
+// Allowed because the user's inbound STOP/CONTINUE opens a 24h messaging window.
+async function sendInstagramMessage(
+  igAccountId: string,
+  accessToken: string,
+  recipientId: string,
+  text: string
+): Promise<boolean> {
+  try {
+    const res = await fetch(
+      `https://graph.instagram.com/v21.0/${igAccountId}/messages?access_token=${accessToken}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          recipient: { id: recipientId },
+          message: { text },
+        }),
+      }
+    )
+    const data = await res.json()
+    if (!res.ok) {
+      console.error('❌ Failed to send confirmation DM:', JSON.stringify(data))
+      return false
+    }
+    return true
+  } catch (err) {
+    console.error('❌ Error sending confirmation DM:', err)
+    return false
+  }
+}
 
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams
   const mode = searchParams.get('hub.mode')
   const token = searchParams.get('hub.verify_token')
   const challenge = searchParams.get('hub.challenge')
-
   if (mode === 'subscribe' && token === VERIFY_TOKEN) {
     console.log('✅ Webhook verified by Meta')
     return new NextResponse(challenge, { status: 200 })
   }
-
   return new NextResponse('Forbidden', { status: 403 })
 }
 
 export async function POST(request: NextRequest) {
   const body = await request.json()
   console.log('📨 Webhook received:', JSON.stringify(body, null, 2))
-
   const supabase = createServiceSupabaseClient()
 
   try {
     const entries = body.entry ?? []
-
     for (const entry of entries) {
       const igAccountId = entry.id
 
@@ -126,7 +155,7 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      // ── DIRECT MESSAGES (entry.messaging) — STOP / opt-out / deletion ──
+      // ── DIRECT MESSAGES (entry.messaging) — STOP / CONTINUE / deletion ──
       // Instagram delivers DMs here, NOT under entry.changes.
       const messagingEvents = entry.messaging ?? []
       for (const event of messagingEvents) {
@@ -155,20 +184,70 @@ export async function POST(request: NextRequest) {
           continue
         }
 
-        const messageText = event?.message?.text?.toLowerCase() ?? ''
-        if (!messageText) continue // skip reads, deliveries, reactions, etc.
+        // Exact-word command matching (so "don't stop!" doesn't unsubscribe anyone)
+        const normalized = (event?.message?.text ?? '').trim().toLowerCase()
+        if (!normalized) continue // skip reads, deliveries, reactions, etc.
 
-        const stopWords = ['stop', 'unsubscribe', 'optout', 'opt out', 'opt-out', 'cancel']
-        const isStopMessage = stopWords.some(word => messageText.includes(word))
-        if (isStopMessage) {
-          console.log(`🚫 Opt-out from ${senderId}`)
+        const STOP_WORDS = ['stop', 'unsubscribe', 'optout', 'opt out', 'opt-out', 'cancel']
+        const CONTINUE_WORDS = ['continue', 'start', 'resume']
+
+        const isStop = STOP_WORDS.includes(normalized)
+        const isContinue = CONTINUE_WORDS.includes(normalized)
+        if (!isStop && !isContinue) continue
+
+        // We need the account's token to send a confirmation reply
+        const { data: igAccount } = await supabase
+          .from('instagram_accounts')
+          .select('access_token_enc')
+          .eq('ig_account_id', igAccountId)
+          .single()
+        if (!igAccount?.access_token_enc) {
+          console.log(`No account/token found for ig_account_id: ${igAccountId}`)
+          continue
+        }
+
+        let accessToken: string
+        try {
+          accessToken = decrypt(igAccount.access_token_enc)
+        } catch (e) {
+          console.error('❌ Failed to decrypt access token:', e)
+          continue
+        }
+
+        if (isStop) {
           await supabase
             .from('dm_optouts')
             .upsert({
               ig_account_id: igAccountId,
               blocked_commenter_ig_id: senderId,
             }, { onConflict: 'ig_account_id,blocked_commenter_ig_id' })
-          console.log(`✅ User ${senderId} added to opt-out list`)
+          console.log(`🚫 Opt-out from ${senderId} — added to opt-out list`)
+
+          await sendInstagramMessage(
+            igAccountId,
+            accessToken,
+            senderId,
+            "You've been unsubscribed and won't receive any more automated messages from us. 🙏\n\nChanged your mind? Just reply CONTINUE anytime to start receiving messages again."
+          )
+        } else if (isContinue) {
+          const { count } = await supabase
+            .from('dm_optouts')
+            .delete({ count: 'exact' })
+            .eq('ig_account_id', igAccountId)
+            .eq('blocked_commenter_ig_id', senderId)
+
+          if (count && count > 0) {
+            console.log(`✅ Re-opt-in from ${senderId} — removed from opt-out list`)
+            await sendInstagramMessage(
+              igAccountId,
+              accessToken,
+              senderId,
+              "You're back in! ✅ You'll now receive messages from us again.\n\nYou can reply STOP at any time to unsubscribe."
+            )
+          } else {
+            // They weren't opted out — nothing to do, don't send a confusing message
+            console.log(`ℹ️ CONTINUE from ${senderId} who wasn't opted out — ignoring`)
+          }
         }
       }
     }
