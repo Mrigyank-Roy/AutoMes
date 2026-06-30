@@ -1,26 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServiceSupabaseClient } from '@/lib/supabase-server'
 
+const PRO_PLANS = ['pro', 'agency']
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const {
-      automationId,
-      userId,
-      triggerType,
-      keywords,
-      dmMessage,
-      dmButtons,
-      replyEnabled,
-      replyMessages,
-      autoDeactivateDays,
+      automationId, userId, triggerType, keywords, dmMessage, dmButtons,
+      followersOnly, replyEnabled, replyMessages, autoDeactivateDays,
     } = body
 
     if (!automationId || !userId || !dmMessage) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
     }
 
-    // Validate & clean buttons (max 3, each needs a label + valid http(s) URL)
+    // Validate & clean buttons
     let cleanButtons: Array<{ label: string; url: string; kind?: string }> = []
     if (Array.isArray(dmButtons)) {
       cleanButtons = dmButtons
@@ -43,43 +38,47 @@ export async function POST(request: NextRequest) {
 
     const supabase = createServiceSupabaseClient()
 
-    // Verify this automation belongs to this user
     const { data: existing } = await supabase
-      .from('automations')
-      .select('id, created_at')
-      .eq('id', automationId)
-      .eq('user_id', userId)
-      .single()
-
+      .from('automations').select('id, created_at')
+      .eq('id', automationId).eq('user_id', userId).single()
     if (!existing) {
       return NextResponse.json({ error: 'Automation not found' }, { status: 404 })
     }
 
-    // Calculate deactivates_at from auto_deactivate_days
     let deactivatesAt: string | null = null
     if (autoDeactivateDays && autoDeactivateDays > 0) {
       const createdAt = new Date(existing.created_at)
-      deactivatesAt = new Date(
-        createdAt.getTime() + autoDeactivateDays * 24 * 60 * 60 * 1000
-      ).toISOString()
+      deactivatesAt = new Date(createdAt.getTime() + autoDeactivateDays * 24 * 60 * 60 * 1000).toISOString()
+    }
+
+    const updateData: Record<string, unknown> = {
+      trigger_type: triggerType,
+      keywords: triggerType === 'keyword' ? keywords : null,
+      dm_message: dmMessage,
+      dm_buttons: cleanButtons,
+      reply_enabled: replyEnabled,
+      reply_messages: replyMessages,
+      auto_deactivate_days: autoDeactivateDays,
+      deactivates_at: deactivatesAt,
+    }
+
+    // Only touch followers_only if the form actually sent it (Pro/Agency gated)
+    if (typeof followersOnly !== 'undefined') {
+      if (followersOnly) {
+        const { data: sub } = await supabase
+          .from('subscriptions').select('plan_name').eq('user_id', userId).single()
+        if (!sub || !PRO_PLANS.includes(sub.plan_name)) {
+          return NextResponse.json({ error: 'Follower-only automations are available on the Pro and Agency plans.' }, { status: 403 })
+        }
+      }
+      updateData.followers_only = !!followersOnly
     }
 
     const { data: updated, error: updateError } = await supabase
       .from('automations')
-      .update({
-        trigger_type: triggerType,
-        keywords: triggerType === 'keyword' ? keywords : null,
-        dm_message: dmMessage,
-        dm_buttons: cleanButtons,
-        reply_enabled: replyEnabled,
-        reply_messages: replyMessages,
-        auto_deactivate_days: autoDeactivateDays,
-        deactivates_at: deactivatesAt,
-      })
-      .eq('id', automationId)
-      .eq('user_id', userId)
-      .select()
-      .single()
+      .update(updateData)
+      .eq('id', automationId).eq('user_id', userId)
+      .select().single()
 
     if (updateError) {
       return NextResponse.json({ error: updateError.message }, { status: 500 })

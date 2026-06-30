@@ -18,12 +18,18 @@ export default function NewAutomationPage() {
   const [triggerType, setTriggerType] = useState<'any' | 'keyword'>('keyword')
   const [keywords, setKeywords] = useState<string[]>([])
   const [keywordInput, setKeywordInput] = useState('')
+  const [followersOnly, setFollowersOnly] = useState(false)
   const [dmMessage, setDmMessage] = useState('')
   const [dmButtons, setDmButtons] = useState<{ label: string; url: string }[]>([])
   const [followEnabled, setFollowEnabled] = useState(false)
   const [followLabel, setFollowLabel] = useState('Follow me 👋')
   const [replyEnabled, setReplyEnabled] = useState(false)
-  const [replyMessages, setReplyMessages] = useState<string[]>(['Check your DMs! 📩', 'Sent you a DM! 🙌'])
+  const [replyMessages, setReplyMessages] = useState<string[]>([
+    'Check your DMs @username! 📩',
+    'Just sent you a DM @username 🙌',
+    'Replied in your inbox @username 💌',
+    "It's in your DMs @username 👀",
+  ])
   const [replyInput, setReplyInput] = useState('')
   const [autoDeactivateDays, setAutoDeactivateDays] = useState(7)
 
@@ -99,6 +105,7 @@ export default function NewAutomationPage() {
         keywords,
         dmMessage: dmMessage.trim(),
         dmButtons: allButtons,
+        followersOnly,
         replyEnabled,
         replyMessages,
         autoDeactivateDays
@@ -110,6 +117,7 @@ export default function NewAutomationPage() {
   }
 
   const canReply = subscription && ['starter', 'pro', 'agency'].includes(subscription.plan_name)
+  const canFollowGate = subscription && ['pro', 'agency'].includes(subscription.plan_name)
 
   if (loading) return <div style={ { display: 'flex', alignItems: 'center', justifyContent: 'center', height: 300 } }><p style={ { color: 'var(--ash)', fontSize: 14 } }>Loading...</p></div>
 
@@ -223,9 +231,57 @@ export default function NewAutomationPage() {
           </div>
         </div>
 
-        {/* Step 4 */}
+        {/* Step 4 — Audience */}
         <div style={ { background: 'var(--canvas)', borderRadius: 'var(--radius-md)', border: '1px solid var(--hairline)', padding: 24 } }>
-          <StepLabel n={4} label="DM message" />
+          <StepLabel n={4} label="Audience" />
+          <div style={ { display: 'flex', flexDirection: 'column', gap: 12 } }>
+            {/* Everyone */}
+            <label style={ { display: 'flex', gap: 14, padding: '14px 16px', borderRadius: 'var(--radius-md)', border: `2px solid ${!followersOnly ? 'var(--ink)' : 'var(--hairline)'}`, cursor: 'pointer', background: !followersOnly ? 'var(--surface)' : 'transparent', transition: 'all 0.15s' } }>
+              <div style={ { width: 18, height: 18, borderRadius: '50%', border: `2px solid ${!followersOnly ? 'var(--ink)' : 'var(--stone)'}`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 2 } }>
+                {!followersOnly && <div style={ { width: 8, height: 8, borderRadius: '50%', background: 'var(--ink)' } } />}
+              </div>
+              <input type="radio" name="audience" checked={!followersOnly} onChange={() => setFollowersOnly(false)} style={ { display: 'none' } } />
+              <div style={ { flex: 1 } }>
+                <p style={ { fontSize: 14, fontWeight: 700, color: 'var(--ink)' } }>Everyone who comments</p>
+                <p style={ { fontSize: 12, color: 'var(--mute)', marginTop: 2 } }>Send the DM to anyone who triggers this automation.</p>
+              </div>
+            </label>
+
+            {/* Followers only */}
+            {canFollowGate ? (
+              <label style={ { display: 'flex', gap: 14, padding: '14px 16px', borderRadius: 'var(--radius-md)', border: `2px solid ${followersOnly ? 'var(--ink)' : 'var(--hairline)'}`, cursor: 'pointer', background: followersOnly ? 'var(--surface)' : 'transparent', transition: 'all 0.15s' } }>
+                <div style={ { width: 18, height: 18, borderRadius: '50%', border: `2px solid ${followersOnly ? 'var(--ink)' : 'var(--stone)'}`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 2 } }>
+                  {followersOnly && <div style={ { width: 8, height: 8, borderRadius: '50%', background: 'var(--ink)' } } />}
+                </div>
+                <input type="radio" name="audience" checked={followersOnly} onChange={() => setFollowersOnly(true)} style={ { display: 'none' } } />
+                <div style={ { flex: 1 } }>
+                  <p style={ { fontSize: 14, fontWeight: 700, color: 'var(--ink)', display: 'flex', alignItems: 'center', gap: 8 } }>
+                    Followers only
+                    <span style={ { background: '#fff0f0', color: 'var(--red)', borderRadius: 'var(--radius-full)', padding: '2px 10px', fontSize: 11, fontWeight: 700 } }>Pro</span>
+                  </p>
+                  <p style={ { fontSize: 12, color: 'var(--mute)', marginTop: 2 } }>Checks that the person follows you. Non-followers get a follow request first, then the DM once they follow.</p>
+                  {followersOnly && (
+                    <p style={ { fontSize: 11, color: 'var(--ash)', marginTop: 10 } } onClick={e => e.stopPropagation()}>
+                      The DM message below is the reward sent after they follow. Edit the follow-request wording in <Link href="/dashboard/automation-config" style={ { color: 'var(--red)', fontWeight: 700 } }>Automation Config</Link>.
+                    </p>
+                  )}
+                </div>
+              </label>
+            ) : (
+              <div style={ { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 16px', background: 'var(--surface)', borderRadius: 'var(--radius-md)', border: '1px dashed var(--hairline)' } }>
+                <div style={ { paddingRight: 12 } }>
+                  <p style={ { fontSize: 13, fontWeight: 700, color: 'var(--ink)' } }>🔒 Followers only — Pro & Agency</p>
+                  <p style={ { fontSize: 12, color: 'var(--mute)', marginTop: 2 } }>Only DM people who follow you.</p>
+                </div>
+                <Link href="/dashboard/billing" className="btn-secondary" style={ { padding: '8px 16px', fontSize: 13 } }>Upgrade</Link>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Step 5 */}
+        <div style={ { background: 'var(--canvas)', borderRadius: 'var(--radius-md)', border: '1px solid var(--hairline)', padding: 24 } }>
+          <StepLabel n={5} label="DM message" />
           <textarea value={dmMessage} onChange={e => setDmMessage(e.target.value)} placeholder="Hey! Here's the free guide you asked for 👉 [your link here]" rows={4} maxLength={1000} style={ { resize: 'none' } } />
           <div style={ { display: 'flex', justifyContent: 'space-between', marginTop: 8 } }>
             <p style={ { fontSize: 12, color: 'var(--ash)' } }>This message will be sent automatically to every commenter</p>
@@ -287,10 +343,10 @@ export default function NewAutomationPage() {
           </div>
         </div>
 
-        {/* Step 5 — Auto deactivate */}
+        {/* Step 6 — Auto deactivate */}
         <div style={ { background: 'var(--canvas)', borderRadius: 'var(--radius-md)', border: '1px solid var(--hairline)', padding: 24 } }>
           <div style={ { display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20 } }>
-            <span style={ { width: 28, height: 28, borderRadius: '50%', background: 'var(--ink)', color: '#fff', fontSize: 12, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center' } }>5</span>
+            <span style={ { width: 28, height: 28, borderRadius: '50%', background: 'var(--ink)', color: '#fff', fontSize: 12, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center' } }>6</span>
             <span style={ { fontSize: 14, fontWeight: 700, color: 'var(--ink)' } }>Auto deactivate</span>
           </div>
           <p style={ { fontSize: 13, color: 'var(--mute)', marginBottom: 16, lineHeight: 1.6 } }>
@@ -315,10 +371,10 @@ export default function NewAutomationPage() {
           </div>
         </div>
 
-        {/* Step 6 — Public reply */}
+        {/* Step 7 — Public reply */}
         <div style={ { background: 'var(--canvas)', borderRadius: 'var(--radius-md)', border: '1px solid var(--hairline)', padding: 24, opacity: canReply ? 1 : 0.8 } }>
           <div style={ { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 20 } }>
-            <span style={ { width: 28, height: 28, borderRadius: '50%', background: 'var(--ink)', color: '#fff', fontSize: 12, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center' } }>6</span>
+            <span style={ { width: 28, height: 28, borderRadius: '50%', background: 'var(--ink)', color: '#fff', fontSize: 12, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center' } }>7</span>
             <span style={ { fontSize: 14, fontWeight: 700, color: 'var(--ink)' } }>Public comment reply</span>
             <span style={ { background: '#fff0f0', color: 'var(--red)', borderRadius: 'var(--radius-full)', padding: '2px 10px', fontSize: 11, fontWeight: 700 } }>Starter+</span>
           </div>
