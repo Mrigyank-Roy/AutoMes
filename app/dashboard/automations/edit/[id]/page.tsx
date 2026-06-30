@@ -24,6 +24,7 @@ export default function EditAutomationPage() {
   const [dmButtons, setDmButtons] = useState<{ label: string; url: string }[]>([])
   const [followEnabled, setFollowEnabled] = useState(false)
   const [followLabel, setFollowLabel] = useState('Follow me 👋')
+  const [followersOnly, setFollowersOnly] = useState(false)
   const [replyEnabled, setReplyEnabled] = useState(false)
   const [replyMessages, setReplyMessages] = useState<string[]>([])
   const [replyInput, setReplyInput] = useState('')
@@ -41,7 +42,6 @@ export default function EditAutomationPage() {
         .eq('id', automationId)
         .eq('user_id', session.user.id)
         .single()
-
       if (!auto) { router.push('/dashboard/automations'); return }
 
       setAutomation(auto)
@@ -57,8 +57,9 @@ export default function EditAutomationPage() {
       setFollowEnabled(!!followBtn)
       setFollowLabel(followBtn?.label ?? 'Follow me 👋')
 
+      setFollowersOnly(auto.followers_only ?? false)
       setReplyEnabled(auto.reply_enabled ?? false)
-      setReplyMessages(auto.reply_messages ?? ['Check your DMs! 📩'])
+      setReplyMessages(auto.reply_messages ?? ['Check your DMs @username! 📩'])
       setAutoDeactivateDays(auto.auto_deactivate_days ?? 7)
 
       const { data: sub } = await supabase
@@ -87,9 +88,11 @@ export default function EditAutomationPage() {
     if (dmButtons.length + (followEnabled ? 1 : 0) >= 3) return
     setDmButtons(prev => [...prev, { label: '', url: '' }])
   }
+
   function updateButton(i: number, field: 'label' | 'url', value: string) {
     setDmButtons(prev => prev.map((b, j) => j === i ? { ...b, [field]: value } : b))
   }
+
   function removeButton(i: number) {
     setDmButtons(prev => prev.filter((_, j) => j !== i))
   }
@@ -125,6 +128,7 @@ export default function EditAutomationPage() {
         keywords,
         dmMessage: dmMessage.trim(),
         dmButtons: allButtons,
+        followersOnly,
         replyEnabled,
         replyMessages,
         autoDeactivateDays,
@@ -136,6 +140,7 @@ export default function EditAutomationPage() {
   }
 
   const canReply = subscription && ['starter', 'pro', 'agency'].includes(subscription.plan_name)
+  const canFollowGate = subscription && ['pro', 'agency'].includes(subscription.plan_name)
 
   if (loading) return (
     <div style={ { display: 'flex', alignItems: 'center', justifyContent: 'center', height: 300 } }>
@@ -215,9 +220,57 @@ export default function EditAutomationPage() {
           </div>
         </div>
 
-        {/* Step 2 — DM message */}
+        {/* Step 2 — Audience */}
         <div style={ { background: 'var(--canvas)', borderRadius: 'var(--radius-md)', border: '1px solid var(--hairline)', padding: 24 } }>
-          <StepLabel n={2} label="DM message" />
+          <StepLabel n={2} label="Audience" />
+          <div style={ { display: 'flex', flexDirection: 'column', gap: 12 } }>
+            {/* Everyone */}
+            <label onClick={() => setFollowersOnly(false)}
+              style={ { display: 'flex', gap: 14, padding: '14px 16px', borderRadius: 'var(--radius-md)', border: `2px solid ${!followersOnly ? 'var(--ink)' : 'var(--hairline)'}`, cursor: 'pointer', background: !followersOnly ? 'var(--surface)' : 'transparent', transition: 'all 0.15s' } }>
+              <div style={ { width: 18, height: 18, borderRadius: '50%', border: `2px solid ${!followersOnly ? 'var(--ink)' : 'var(--stone)'}`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 2 } }>
+                {!followersOnly && <div style={ { width: 8, height: 8, borderRadius: '50%', background: 'var(--ink)' } } />}
+              </div>
+              <div style={ { flex: 1 } }>
+                <p style={ { fontSize: 14, fontWeight: 700, color: 'var(--ink)' } }>Everyone who comments</p>
+                <p style={ { fontSize: 12, color: 'var(--mute)', marginTop: 2 } }>Send the DM to anyone who triggers this automation.</p>
+              </div>
+            </label>
+
+            {/* Followers only */}
+            {canFollowGate ? (
+              <label onClick={() => setFollowersOnly(true)}
+                style={ { display: 'flex', gap: 14, padding: '14px 16px', borderRadius: 'var(--radius-md)', border: `2px solid ${followersOnly ? 'var(--ink)' : 'var(--hairline)'}`, cursor: 'pointer', background: followersOnly ? 'var(--surface)' : 'transparent', transition: 'all 0.15s' } }>
+                <div style={ { width: 18, height: 18, borderRadius: '50%', border: `2px solid ${followersOnly ? 'var(--ink)' : 'var(--stone)'}`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 2 } }>
+                  {followersOnly && <div style={ { width: 8, height: 8, borderRadius: '50%', background: 'var(--ink)' } } />}
+                </div>
+                <div style={ { flex: 1 } }>
+                  <p style={ { fontSize: 14, fontWeight: 700, color: 'var(--ink)', display: 'flex', alignItems: 'center', gap: 8 } }>
+                    Followers only
+                    <span style={ { background: '#fff0f0', color: 'var(--red)', borderRadius: 'var(--radius-full)', padding: '2px 10px', fontSize: 11, fontWeight: 700 } }>Pro</span>
+                  </p>
+                  <p style={ { fontSize: 12, color: 'var(--mute)', marginTop: 2 } }>Checks that the person follows you. Non-followers get a follow request first, then the DM once they follow.</p>
+                  {followersOnly && (
+                    <p style={ { fontSize: 11, color: 'var(--ash)', marginTop: 10 } } onClick={e => e.stopPropagation()}>
+                      The DM message below is the reward sent after they follow. Edit the follow-request wording in <Link href="/dashboard/automation-config" style={ { color: 'var(--red)', fontWeight: 700 } }>Automation Config</Link>.
+                    </p>
+                  )}
+                </div>
+              </label>
+            ) : (
+              <div style={ { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 16px', background: 'var(--surface)', borderRadius: 'var(--radius-md)', border: '1px dashed var(--hairline)' } }>
+                <div style={ { paddingRight: 12 } }>
+                  <p style={ { fontSize: 13, fontWeight: 700, color: 'var(--ink)' } }>🔒 Followers only — Pro & Agency</p>
+                  <p style={ { fontSize: 12, color: 'var(--mute)', marginTop: 2 } }>Only DM people who follow you.</p>
+                </div>
+                <a href="/dashboard/billing" style={ { padding: '8px 16px', borderRadius: 'var(--radius-md)', background: 'var(--secondary-bg)', color: 'var(--ink)', fontSize: 13, fontWeight: 700, textDecoration: 'none' } }>Upgrade</a>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Step 3 — DM message */}
+        <div style={ { background: 'var(--canvas)', borderRadius: 'var(--radius-md)', border: '1px solid var(--hairline)', padding: 24 } }>
+          <StepLabel n={3} label="DM message" />
           <textarea value={dmMessage} onChange={e => setDmMessage(e.target.value)}
             placeholder="Hey! Here's the free guide you asked for 👉 [your link here]"
             rows={4} maxLength={1000} style={ { resize: 'none', width: '100%' } } />
@@ -233,7 +286,6 @@ export default function EditAutomationPage() {
               <span style={ { fontSize: 12, color: 'var(--ash)' } }>{totalButtons} / 3</span>
             </div>
             <p style={ { fontSize: 12, color: 'var(--mute)', marginBottom: 12 } }>Add up to 3 tappable buttons that open a link inside the DM.</p>
-
             <div style={ { display: 'flex', flexDirection: 'column', gap: 12 } }>
               {dmButtons.map((btn, i) => (
                 <div key={i} style={ { display: 'flex', flexDirection: 'column', gap: 8, padding: 12, background: 'var(--surface)', borderRadius: 'var(--radius-md)', border: '1px solid var(--hairline)' } }>
@@ -246,7 +298,6 @@ export default function EditAutomationPage() {
                 </div>
               ))}
             </div>
-
             {totalButtons < 3 && (
               <button onClick={addButton} style={ { marginTop: dmButtons.length > 0 ? 12 : 0, padding: '10px 16px', borderRadius: 'var(--radius-md)', background: 'var(--secondary-bg)', border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 700, color: 'var(--ink)' } }>
                 + Add button
@@ -281,9 +332,9 @@ export default function EditAutomationPage() {
           </div>
         </div>
 
-        {/* Step 3 — Auto deactivate */}
+        {/* Step 4 — Auto deactivate */}
         <div style={ { background: 'var(--canvas)', borderRadius: 'var(--radius-md)', border: '1px solid var(--hairline)', padding: 24 } }>
-          <StepLabel n={3} label="Auto deactivate" />
+          <StepLabel n={4} label="Auto deactivate" />
           <p style={ { fontSize: 13, color: 'var(--mute)', marginBottom: 16, lineHeight: 1.6 } }>
             Automatically pause this automation after a set number of days. Useful for limited-time offers, giveaways, or launch posts. Set to 0 to never auto-deactivate.
           </p>
@@ -320,10 +371,10 @@ export default function EditAutomationPage() {
           </div>
         </div>
 
-        {/* Step 4 — Public reply */}
+        {/* Step 5 — Public reply */}
         <div style={ { background: 'var(--canvas)', borderRadius: 'var(--radius-md)', border: '1px solid var(--hairline)', padding: 24, opacity: canReply ? 1 : 0.8 } }>
           <div style={ { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 20 } }>
-            <span style={ { width: 28, height: 28, borderRadius: '50%', background: 'var(--ink)', color: '#fff', fontSize: 12, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center' } }>4</span>
+            <span style={ { width: 28, height: 28, borderRadius: '50%', background: 'var(--ink)', color: '#fff', fontSize: 12, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center' } }>5</span>
             <span style={ { fontSize: 14, fontWeight: 700, color: 'var(--ink)' } }>Public comment reply</span>
             <span style={ { background: '#fff0f0', color: 'var(--red)', borderRadius: 'var(--radius-full)', padding: '2px 10px', fontSize: 11, fontWeight: 700 } }>Starter+</span>
           </div>

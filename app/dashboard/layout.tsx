@@ -9,6 +9,7 @@ import { LogoLockup } from '@/components/Logo'
 const nav = [
   { label: 'Dashboard', href: '/dashboard', icon: '▦' },
   { label: 'Automations', href: '/dashboard/automations', icon: '⚡' },
+  { label: 'Automation Config', href: '/dashboard/automation-config', icon: '🎛️' },
   { label: 'DM Logs', href: '/dashboard/logs', icon: '📋' },
   { label: 'Settings', href: '/dashboard/settings', icon: '⚙️' },
   { label: 'Billing', href: '/dashboard/billing', icon: '💳' },
