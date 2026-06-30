@@ -41,7 +41,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       <aside style={ { width: 220, background: 'var(--canvas)', borderRight: '1px solid var(--hairline)', position: 'fixed', height: '100%', display: 'flex', flexDirection: 'column' } }>
         <div style={ { padding: '20px 20px 16px', borderBottom: '1px solid var(--hairline)' } }>
           <Link href="/" aria-label="AutoMes home" style={ { color: 'var(--ink)', textDecoration: 'none', display: 'block', lineHeight: 0 } }>
-            <LogoLockup height={28} />
+            <LogoLockup height={41} />
           </Link>
           <p style={ { fontSize: 11, color: 'var(--ash)', marginTop: 8, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }>{email}</p>
         </div>
