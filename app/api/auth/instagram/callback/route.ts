@@ -12,24 +12,26 @@ export async function GET(request: NextRequest) {
   const state = searchParams.get('state')
   const error = searchParams.get('error')
 
-  if (error) {
-    return NextResponse.redirect(`${APP_URL}/dashboard?error=instagram_denied`)
-  }
-
-  if (!code || !state) {
-    return NextResponse.redirect(`${APP_URL}/dashboard?error=no_code`)
-  }
-
-  // Decode user ID from state
+  // Decode state early so we know where to send the user back
   let userId: string | null = null
-  try {
-    const stateData = JSON.parse(Buffer.from(state, 'base64').toString('utf8'))
-    userId = stateData.userId
-  } catch (e) {
-    console.error('Failed to parse state:', e)
-    return NextResponse.redirect(`${APP_URL}/login?error=invalid_state`)
+  let from = 'dashboard'
+  if (state) {
+    try {
+      const stateData = JSON.parse(Buffer.from(state, 'base64').toString('utf8'))
+      userId = stateData.userId
+      if (stateData.from) from = stateData.from
+    } catch (e) {
+      console.error('Failed to parse state:', e)
+    }
   }
+  const returnBase = from === 'onboarding' ? '/onboarding' : '/dashboard'
 
+  if (error) {
+    return NextResponse.redirect(`${APP_URL}${returnBase}?error=instagram_denied`)
+  }
+  if (!code || !state) {
+    return NextResponse.redirect(`${APP_URL}${returnBase}?error=no_code`)
+  }
   if (!userId) {
     return NextResponse.redirect(`${APP_URL}/login?error=no_user_in_state`)
   }
@@ -54,7 +56,7 @@ export async function GET(request: NextRequest) {
 
     if (tokenData.error_type || !tokenData.access_token) {
       console.error('Token exchange error:', tokenData)
-      return NextResponse.redirect(`${APP_URL}/dashboard?error=token_exchange_failed`)
+      return NextResponse.redirect(`${APP_URL}${returnBase}?error=token_exchange_failed`)
     }
 
     const shortLivedToken = tokenData.access_token
@@ -62,7 +64,7 @@ export async function GET(request: NextRequest) {
     // Step B — Try to get long-lived token, fall back to short-lived
     let accessToken = shortLivedToken
     let tokenExpiresAt = new Date()
-    tokenExpiresAt.setHours(tokenExpiresAt.getHours() + 1) // short-lived = 1 hour
+    tokenExpiresAt.setHours(tokenExpiresAt.getHours() + 1)
 
     try {
       const longTokenRes = await fetch(
@@ -75,7 +77,6 @@ export async function GET(request: NextRequest) {
       console.log('Long-lived token response:', JSON.stringify(longTokenData))
 
       if (longTokenData.access_token && !longTokenData.error) {
-        // Long-lived token succeeded
         accessToken = longTokenData.access_token
         tokenExpiresAt = new Date()
         tokenExpiresAt.setSeconds(
@@ -83,25 +84,22 @@ export async function GET(request: NextRequest) {
         )
         console.log('✅ Using long-lived token, expires:', tokenExpiresAt)
       } else {
-        // Long-lived exchange failed — use short-lived for now
         console.warn('Long-lived token exchange failed, using short-lived token:', longTokenData.error?.message)
       }
     } catch (longTokenErr) {
       console.warn('Long-lived token exchange error, using short-lived:', longTokenErr)
     }
 
-    // Step C — Get Instagram profile using whatever token we have
+    // Step C — Get Instagram profile
     const igProfileRes = await fetch(
-      `https://graph.instagram.com/v21.0/me?` +
-      `fields=id,username&` +
-      `access_token=${accessToken}`
+      `https://graph.instagram.com/v21.0/me?fields=id,username&access_token=${accessToken}`
     )
     const igProfile = await igProfileRes.json()
     console.log('IG Profile:', JSON.stringify(igProfile))
 
     if (igProfile.error || !igProfile.id) {
       console.error('Failed to get IG profile:', igProfile)
-      return NextResponse.redirect(`${APP_URL}/dashboard?error=profile_fetch_failed`)
+      return NextResponse.redirect(`${APP_URL}${returnBase}?error=profile_fetch_failed`)
     }
 
     const igAccountId = igProfile.id
@@ -109,7 +107,7 @@ export async function GET(request: NextRequest) {
 
     if (!accessToken) {
       console.error('No access token available')
-      return NextResponse.redirect(`${APP_URL}/dashboard?error=no_access_token`)
+      return NextResponse.redirect(`${APP_URL}${returnBase}?error=no_access_token`)
     }
 
     // Step D — Encrypt the token
@@ -117,7 +115,6 @@ export async function GET(request: NextRequest) {
 
     // Step E — Save to Supabase
     const serviceSupabase = createServiceSupabaseClient()
-
     const { error: dbError } = await serviceSupabase
       .from('instagram_accounts')
       .upsert({
@@ -132,14 +129,13 @@ export async function GET(request: NextRequest) {
 
     if (dbError) {
       console.error('Supabase save error:', dbError)
-      return NextResponse.redirect(`${APP_URL}/dashboard?error=save_failed`)
+      return NextResponse.redirect(`${APP_URL}${returnBase}?error=save_failed`)
     }
 
     console.log(`✅ Instagram account connected: @${igUsername}`)
-    return NextResponse.redirect(`${APP_URL}/dashboard?success=instagram_connected`)
-
+    return NextResponse.redirect(`${APP_URL}${returnBase}?success=instagram_connected`)
   } catch (err) {
     console.error('OAuth callback error:', err)
-    return NextResponse.redirect(`${APP_URL}/dashboard?error=oauth_failed`)
+    return NextResponse.redirect(`${APP_URL}${returnBase}?error=oauth_failed`)
   }
 }
