@@ -1,9 +1,9 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { Suspense, useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useRouter, useSearchParams } from 'next/navigation'
 
-export default function OnboardingPage() {
+function OnboardingInner() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const [userId, setUserId] = useState('')
@@ -121,5 +121,17 @@ export default function OnboardingPage() {
         </div>
       </div>
     </div>
+  )
+}
+
+export default function OnboardingPage() {
+  return (
+    <Suspense fallback={
+      <div style={ { minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--surface)' } }>
+        <p style={ { color: 'var(--ash)', fontSize: 14 } }>Loading…</p>
+      </div>
+    }>
+      <OnboardingInner />
+    </Suspense>
   )
 }
