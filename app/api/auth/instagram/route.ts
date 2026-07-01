@@ -6,6 +6,7 @@ export async function GET(request: NextRequest) {
   
   // Get user ID passed from dashboard
   const userId = request.nextUrl.searchParams.get('uid')
+  const from = request.nextUrl.searchParams.get('from') ?? 'dashboard'
   
   if (!userId) {
     return NextResponse.redirect(
@@ -22,6 +23,7 @@ export async function GET(request: NextRequest) {
   // Encode user ID in state
   const state = Buffer.from(JSON.stringify({
     userId,
+    from,
     timestamp: Date.now(),
     random: Math.random().toString(36).slice(2)
   })).toString('base64')

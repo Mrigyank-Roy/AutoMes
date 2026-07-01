@@ -23,9 +23,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
       if (!session) { router.push('/login'); return }
       setEmail(session.user.email ?? '')
+      const { data: profile } = await supabase
+        .from('users').select('onboarded').eq('id', session.user.id).single()
+      if (!profile?.onboarded) { router.replace('/onboarding'); return }
       setLoading(false)
     })
   }, [router])
